@@ -1,0 +1,59 @@
+TSP, Token Saving Protocol
+Copyright (C) 2026 TSP contributors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See LICENSE for the full text.
+
+
+THIRD-PARTY COMPONENTS
+======================
+
+PyMuPDF and MuPDF
+-----------------
+    Copyright (C) Artifex Software, Inc.
+    GNU Affero General Public License v3.0, or an Artifex commercial licence.
+    https://pymupdf.readthedocs.io
+
+    TSP calls PyMuPDF as a library. Two consequences worth knowing about:
+
+    1. Handing someone a build. A PyInstaller folder or a zip of dist/TSP
+       contains PyMuPDF, so the recipient is entitled to the corresponding
+       source of that AGPL component. Pointing them at this repository and at
+       https://pypi.org/project/pymupdf/ satisfies it.
+
+    2. Running it as a network service. AGPL section 13 reaches users who
+       interact with a modified version over a network. A server-side
+       deployment triggers it. The GitHub Pages build runs PyMuPDF inside the
+       visitor's own browser, which is a weaker case, and publishing the
+       source at the same origin settles it either way. See docs/BROWSER.md.
+
+    Buying an Artifex commercial licence removes both obligations. Contact
+    Artifex if a client needs TSP inside a proprietary product.
+
+Pyodide
+-------
+    Copyright (C) Pyodide contributors and Mozilla
+    Mozilla Public License 2.0
+    https://pyodide.org
+    Loaded from a CDN by the browser build. Not redistributed here.
+
+Pillow
+------
+    Copyright (C) Jeffrey A. Clark and contributors
+    MIT-CMU licence
+    https://python-pillow.org
+    Used by packaging/make_icon.py and by the image tests. Not required at
+    runtime, and excluded from PyInstaller builds.
+
+
+COMPATIBILITY NOTE
+==================
+
+The Free Software Foundation permits combining AGPLv3 and GPLv3 work: AGPLv3
+section 13 carries an explicit permission for it. TSP is therefore GPLv3, while
+PyMuPDF stays AGPLv3. Neither licence changes the other.
+
+If a project needs permissive licensing, pypdf (BSD) and pdfplumber (MIT) cover
+text extraction, at some cost in extraction quality and with no page rendering.

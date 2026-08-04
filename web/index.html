@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TSP - Token Saving Protocol</title>
+<meta name="description" content="Strip PDFs down to token-efficient text in your browser. Nothing uploads.">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="icon" href="./favicon.png" sizes="64x64">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="mark" aria-hidden="true">
+    <span></span><span></span><span></span><span></span>
+  </div>
+  <div>
+    <h1>Token Saving Protocol</h1>
+    <p class="standfirst">
+      PDFs in, compact text out. Pages that carry their meaning in charts come
+      back as images instead. Your files stay on this machine.
+    </p>
+  </div>
+</header>
+
+<div id="engine" class="engine engine--waiting" role="status" aria-live="polite">
+  <span class="engine__dot" aria-hidden="true"></span>
+  <span id="engine-text">Engine idle</span>
+  <button id="boot" class="link" type="button">Start engine</button>
+</div>
+
+<main>
+  <section class="panel" aria-labelledby="queue-heading">
+    <h2 id="queue-heading" class="label">Documents</h2>
+
+    <div id="drop" class="drop" tabindex="0" role="button"
+         aria-label="Choose PDFs, or drop them here">
+      <p class="drop__line">Drop PDFs here, or <span class="drop__link">choose files</span></p>
+      <p class="drop__note">Read locally, never uploaded</p>
+      <input id="picker" type="file" accept="application/pdf" multiple hidden>
+    </div>
+
+    <ul id="queue" class="queue"></ul>
+
+    <div class="controls">
+      <label class="field">
+        <span>Image quality</span>
+        <select id="dpi">
+          <option value="96">96 dpi, smallest</option>
+          <option value="144" selected>144 dpi</option>
+          <option value="200">200 dpi</option>
+          <option value="300">300 dpi, sharpest</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button id="run" class="button" type="button" disabled>Process files</button>
+        <button id="reset" class="link" type="button" hidden>Clear</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="meter-heading">
+    <h2 id="meter-heading" class="label">Token meter</h2>
+
+    <div class="meter">
+      <div class="meter__bar">
+        <div class="meter__kept" id="meter-kept" style="width:0%"></div>
+      </div>
+      <dl class="readout">
+        <div><dt>Extracted</dt><dd id="stat-in">0</dd></div>
+        <div><dt>Kept</dt><dd id="stat-out">0</dd></div>
+        <div><dt>Trimmed</dt><dd id="stat-cut">0%</dd></div>
+        <div><dt>Page images</dt><dd id="stat-img">0</dd></div>
+      </dl>
+      <p class="meter__note">
+        Token figures are estimates at four characters per token, for comparison
+        rather than billing.
+      </p>
+    </div>
+
+    <div id="results" class="results" hidden>
+      <a id="download" class="button button--quiet" download="tsp_output.zip">
+        Download results
+      </a>
+      <button id="save-folder" class="link" type="button" hidden>
+        Save to a folder instead
+      </button>
+    </div>
+
+    <p id="log" class="log" role="status" aria-live="polite"></p>
+  </section>
+</main>
+
+<footer>
+  <p>
+    Free software under the
+    <a href="https://www.gnu.org/licenses/gpl-3.0.html">GNU GPL v3</a>.
+    The engine here is the same Python that runs on the desktop, compiled to
+    WebAssembly through <a href="https://pyodide.org">Pyodide</a> with
+    <a href="https://pymupdf.readthedocs.io">PyMuPDF</a>
+    (<a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL v3</a>).
+  </p>
+</footer>
+
+<script src="./app.js" type="module"></script>
+</body>
+</html>

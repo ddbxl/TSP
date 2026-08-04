@@ -1,0 +1,227 @@
+"""Tests for the TSP engine.
+
+    pip install pytest pymupdf pillow
+    pytest -q
+
+The fixture builds its own PDF, so the suite needs no sample files.
+"""
+
+from __future__ import annotations
+
+import io
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+pymupdf = pytest.importorskip("pymupdf")
+
+from tsp.core import (  # noqa: E402
+    Settings,
+    clean_text,
+    estimate_tokens,
+    process_pdf,
+)
+
+W, H = 595.0, 842.0
+
+BODY = (
+    "The Smart Specialisation Strategy framework requires regional author-\n"
+    "ities to identify a limited number of priority domains where local\n"
+    "capabilities and market opportunity coincide.    Wide    gaps    here.\n"
+)
+
+
+def _furniture(page, number: int) -> None:
+    """A running header and a footer carrying the page number."""
+    page.insert_text((60, 40), "Regional Innovation Monitor - Country Report 2026", fontsize=8)
+    page.insert_text((60, H - 40), f"Page {number} of 11", fontsize=8)
+
+
+def _png(size: int, colour: tuple[int, int, int]) -> bytes:
+    Image = pytest.importorskip("PIL.Image", reason="Pillow needed for image pages")
+    image = Image.new("RGB", (size, size), colour)
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+@pytest.fixture(scope="module")
+def sample(tmp_path_factory) -> Path:
+    path = tmp_path_factory.mktemp("pdfs") / "monitor.pdf"
+    doc = pymupdf.open()
+
+    # 1-6: plain text with furniture and a paragraph repeated down the page
+    for number in range(1, 7):
+        page = doc.new_page(width=W, height=H)
+        _furniture(page, number)
+        page.insert_textbox(pymupdf.Rect(60, 70, W - 60, H - 60), BODY * 3, fontsize=10)
+
+    # 7: raster image covering most of the page
+    page = doc.new_page(width=W, height=H)
+    _furniture(page, 7)
+    page.insert_image(pymupdf.Rect(60, 110, W - 60, 700), stream=_png(600, (40, 90, 160)))
+    page.insert_text((60, 730), "Figure 1: innovation index", fontsize=9)
+
+    # 8: a small logo only. Must stay in text mode.
+    page = doc.new_page(width=W, height=H)
+    _furniture(page, 8)
+    page.insert_image(pymupdf.Rect(60, 55, 105, 100), stream=_png(80, (200, 30, 90)))
+    page.insert_textbox(pymupdf.Rect(60, 120, W - 60, H - 60), BODY * 3, fontsize=10)
+
+    # 9: a chart drawn in vectors, little text
+    page = doc.new_page(width=W, height=H)
+    _furniture(page, 9)
+    for index in range(90):
+        x = 60 + index * 5
+        page.draw_rect(
+            pymupdf.Rect(x, 400 - (index % 17) * 18, x + 4, 400),
+            color=(0.1, 0.3, 0.7),
+            fill=(0.2, 0.5, 0.9),
+        )
+    page.insert_text((60, 430), "Chart 2: vector bars", fontsize=9)
+
+    # 10: blank apart from the furniture
+    page = doc.new_page(width=W, height=H)
+    _furniture(page, 10)
+
+    # 11: entirely blank
+    doc.new_page(width=W, height=H)
+
+    doc.save(path)
+    doc.close()
+    return path
+
+
+# -- text cleaning -------------------------------------------------------
+
+
+def test_punctuation_normalised():
+    dirty = "\u201cS3\u201d \u2014 the \u2018frontier\u2019 regions\u2026 \ufb01ne\u00a0print"
+    assert clean_text(dirty, Settings()) == '"S3" - the \'frontier\' regions... fine print'
+
+
+def test_dehyphenation_joins_words():
+    assert "concentrate" in clean_text("concen-\ntrate resources", Settings())
+
+
+def test_dehyphenation_leaves_real_hyphens():
+    out = clean_text("macro-region\nand co-operation", Settings())
+    assert "macro-region" in out and "co-operation" in out
+
+
+def test_whitespace_collapsed():
+    out = clean_text("a    b\n\n\n\n\nc   \n", Settings())
+    assert out == "a b\n\nc"
+
+
+def test_raw_punctuation_setting_preserves_glyphs():
+    out = clean_text("\u201cquoted\u201d", Settings(normalise_punctuation=False))
+    assert "\u201c" in out
+
+
+def test_token_estimate_scales():
+    assert estimate_tokens("x" * 400) == 100
+
+
+# -- document processing -------------------------------------------------
+
+
+def test_processes_and_writes_output(sample: Path):
+    result = process_pdf(sample)
+    assert result.ok, result.message
+    assert result.pages == 11
+    assert result.text_path is not None and result.text_path.is_file()
+    assert (result.text_path.parent / "MANIFEST.txt").is_file()
+
+
+def test_running_header_and_footer_removed(sample: Path):
+    text = process_pdf(sample).text_path.read_text(encoding="utf-8")
+    assert "Regional Innovation Monitor" not in text
+    assert "Page 4 of 11" not in text
+
+
+def test_repeated_body_paragraph_survives(sample: Path):
+    """The paragraph repeats on every page. Frequency alone would delete it,
+    so the once-per-page condition has to keep it."""
+    text = process_pdf(sample).text_path.read_text(encoding="utf-8")
+    assert text.count("market opportunity coincide") >= 6
+
+
+def test_image_page_detected_and_logo_ignored(sample: Path):
+    result = process_pdf(sample, Settings(image_threshold=0.05))
+    by_number = {stat.number: stat for stat in result.page_stats}
+    assert by_number[7].visual, "a page-filling image should render"
+    assert not by_number[8].visual, "a small logo should not trigger a render"
+
+
+def test_vector_chart_page_detected(sample: Path):
+    result = process_pdf(sample, Settings(image_threshold=0.05))
+    assert result.page_stats[8].visual, "vector charts hold no raster image"
+
+
+def test_text_only_mode_writes_no_images(sample: Path, tmp_path: Path):
+    result = process_pdf(
+        sample,
+        Settings(image_threshold=1.01, render_visual_pages=False, output_dir=tmp_path),
+    )
+    assert result.images_saved == 0
+    assert not list(result.text_path.parent.glob("*.png"))
+
+
+def test_output_dir_respected(sample: Path, tmp_path: Path):
+    result = process_pdf(sample, Settings(output_dir=tmp_path))
+    assert tmp_path in result.text_path.parents
+
+
+def test_saving_reported(sample: Path):
+    result = process_pdf(sample)
+    assert 0.0 < result.saving < 1.0
+    assert result.tokens_out < result.tokens_in
+
+
+def test_higher_threshold_renders_fewer_pages(sample: Path, tmp_path: Path):
+    low = process_pdf(sample, Settings(image_threshold=0.05, output_dir=tmp_path / "a"))
+    high = process_pdf(sample, Settings(image_threshold=0.95, output_dir=tmp_path / "b"))
+    assert high.images_saved <= low.images_saved
+
+
+def test_dpi_changes_image_size(sample: Path, tmp_path: Path):
+    small = process_pdf(sample, Settings(render_zoom=1.0, output_dir=tmp_path / "s"))
+    large = process_pdf(sample, Settings(render_zoom=3.0, output_dir=tmp_path / "l"))
+    first_small = sorted(small.text_path.parent.glob("*.png"))[0]
+    first_large = sorted(large.text_path.parent.glob("*.png"))[0]
+    assert first_large.stat().st_size > first_small.stat().st_size
+
+
+# -- failure paths -------------------------------------------------------
+
+
+def test_missing_file_reports_cleanly(tmp_path: Path):
+    result = process_pdf(tmp_path / "nope.pdf")
+    assert not result.ok and "not found" in result.message.lower()
+
+
+def test_not_a_pdf_reports_cleanly(tmp_path: Path):
+    junk = tmp_path / "junk.pdf"
+    junk.write_bytes(b"this is not a pdf")
+    result = process_pdf(junk)
+    assert not result.ok and result.message
+
+
+def test_encrypted_pdf_reports_cleanly(tmp_path: Path, sample: Path):
+    locked = tmp_path / "locked.pdf"
+    doc = pymupdf.open(sample)
+    doc.save(locked, encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw="secret")
+    doc.close()
+    result = process_pdf(locked)
+    assert not result.ok and "password" in result.message.lower()
+
+
+def test_cancellation_stops_early(sample: Path, tmp_path: Path):
+    result = process_pdf(
+        sample, Settings(output_dir=tmp_path), is_cancelled=lambda: True
+    )
+    assert not result.ok and "cancel" in result.message.lower()
