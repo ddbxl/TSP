@@ -102,14 +102,20 @@ That stages the engine, serves `web/` and opens the page. First load pulls about
 28 MB, which the browser then caches. A 100-page report takes about 2.3 seconds
 in the browser against 1.0 second on the desktop.
 
-Four ways to take the result away, in the order the page offers them:
+Each finished document carries its own actions, and the panel below repeats them
+for the batch:
 
 | | Good for |
 |---|---|
 | **Copy text** | Pasting straight into a chat. No file, no unpacking. |
-| **Download text** | One `.txt`, every document joined. Works everywhere. |
-| **Save every file to a folder** | Text, manifests and page images onto disk. Chrome, Edge and Opera. |
-| **Download as a zip** | The same, on browsers without folder access. |
+| **Download text** | One `.txt`. Per document, or every document joined. |
+| **Download files** | That document's text, manifest and page images as a zip. |
+| **Save every file to a folder** | Everything onto disk. Chrome, Edge and Opera. |
+| **Download everything as a zip** | The same, on browsers without folder access. |
+
+Downloads keep the source name with a marker in front, so
+`S3_Study_Final_Report.pdf` gives `optimised_S3_Study_Final_Report.txt` and sorts
+beside its original.
 
 Chrome refuses to write to certain folders, Downloads among them, and reports
 that identically to a cancelled dialogue, so the page cannot tell the two apart.

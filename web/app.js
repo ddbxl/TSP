@@ -12,6 +12,54 @@ const WORKER_URL = new URL("./worker.js", import.meta.url);
 const CORE_URL = new URL("./tsp_core.py", import.meta.url);
 const BRIDGE_URL = new URL("./bridge.py", import.meta.url);
 
+/* Output keeps the source name with a marker in front, so an optimised copy
+   sits beside its original and sorts next to it. */
+function optimisedName(pdfName, extension) {
+  return `optimised_${pdfName.replace(/\.pdf$/i, "")}.${extension}`;
+}
+
+function humanSize(bytes) {
+  const kb = bytes / 1024;
+  return kb < 1024 ? `${Math.round(kb)} KB` : `${(kb / 1024).toFixed(1)} MB`;
+}
+
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+async function toClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const holder = document.createElement("textarea");
+    holder.value = text;
+    holder.setAttribute("readonly", "");
+    holder.style.position = "fixed";
+    holder.style.opacity = "0";
+    document.body.append(holder);
+    holder.select();
+    const worked = document.execCommand && document.execCommand("copy");
+    holder.remove();
+    return Boolean(worked);
+  }
+}
+
+function flash(button, word) {
+  const original = button.textContent;
+  button.textContent = word;
+  button.disabled = true;
+  setTimeout(() => {
+    button.textContent = original;
+    button.disabled = false;
+  }, 1500);
+}
+
 const MODES = [
   { label: "Text documents (5%)", value: 5 },
   { label: "Mixed reports (20%)", value: 20 },
@@ -226,11 +274,9 @@ function showFailure(lead, detail) {
     `&body=${encodeURIComponent("What happened:\n\n\n---\n\n```\n" + body + "\n```")}`;
 
   ui.failureCopy.onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(report);
-      ui.failureCopy.textContent = "Copied";
-      setTimeout(() => (ui.failureCopy.textContent = "Copy details"), 1600);
-    } catch {
+    if (await toClipboard(report)) {
+      flash(ui.failureCopy, "Copied");
+    } else {
       ui.failureTrace.parentElement.open = true;
     }
   };
@@ -380,11 +426,78 @@ function render() {
     remove.disabled = running;
     remove.addEventListener("click", () => drop(index));
 
-    row.append(name, size, select, tables, state, remove);
+    const main = document.createElement("div");
+    main.className = "row__main";
+    main.append(name, size, select, tables, state, remove);
+    row.append(main);
+
+    if (entry.state === "done" && entry.report) {
+      row.append(rowActions(entry));
+    }
+
     ui.queue.append(row);
   });
 
   refresh();
+}
+
+/* Copy, text and files, for this document alone. */
+function rowActions(entry) {
+  const bar = document.createElement("div");
+  bar.className = "row__actions";
+
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "link";
+  copy.textContent = "Copy text";
+  copy.addEventListener("click", async () => {
+    try {
+      const answer = await ask("text", { name: entry.file.name });
+      flash(copy, (await toClipboard(answer.text)) ? "Copied" : "Blocked");
+    } catch (error) {
+      log(`${entry.file.name}: ${error.message}`);
+    }
+  });
+
+  const text = document.createElement("button");
+  text.type = "button";
+  text.className = "link";
+  text.textContent = "Download text";
+  text.addEventListener("click", async () => {
+    try {
+      const answer = await ask("text", { name: entry.file.name });
+      saveBlob(
+        new Blob([answer.text], { type: "text/plain;charset=utf-8" }),
+        optimisedName(entry.file.name, "txt")
+      );
+    } catch (error) {
+      log(`${entry.file.name}: ${error.message}`);
+    }
+  });
+
+  bar.append(copy, text);
+
+  // A zip only adds anything when there are page images alongside the text.
+  if (entry.report.images) {
+    const files = document.createElement("button");
+    files.type = "button";
+    files.className = "link";
+    files.textContent = `Download files (${entry.report.images} images)`;
+    files.addEventListener("click", async () => {
+      try {
+        const answer = await ask("deliver", { name: entry.file.name });
+        saveBlob(
+          new Blob([answer.bytes], { type: "application/zip" }),
+          optimisedName(entry.file.name, "zip")
+        );
+      } catch (error) {
+        log(`${entry.file.name}: ${error.message}`);
+      }
+    });
+    bar.append(files);
+  }
+
+  return bar;
 }
 
 function refresh() {
@@ -521,15 +634,21 @@ async function offerResults(scannedTotal) {
     return;
   }
 
+  const done = queue.filter((entry) => entry.state === "done");
+  const single = done.length === 1 ? done[0].file.name : null;
+
   // The zip carries everything, including page images.
   const blob = new Blob([output.bytes], { type: "application/zip" });
   if (ui.download.dataset.url) URL.revokeObjectURL(ui.download.dataset.url);
   const zipUrl = URL.createObjectURL(blob);
   ui.download.href = zipUrl;
   ui.download.dataset.url = zipUrl;
+  ui.download.download = single
+    ? optimisedName(single, "zip")
+    : "optimised_documents.zip";
   ui.download.textContent = `Download everything as a zip (${
     output.names.length
-  } files, ${(blob.size / 1048576).toFixed(1)} MB)`;
+  } files, ${humanSize(blob.size)})`;
 
   // Reveal the zip before fetching the text, so a failure in the step below
   // still leaves a working download.
@@ -550,17 +669,12 @@ async function offerResults(scannedTotal) {
       URL.revokeObjectURL(ui.downloadText.dataset.url);
     }
     const textUrl = URL.createObjectURL(textBlob);
-    const done = queue.filter((e) => e.state === "done");
     ui.downloadText.href = textUrl;
     ui.downloadText.dataset.url = textUrl;
-    ui.downloadText.download =
-      done.length === 1
-        ? `${done[0].file.name.replace(/\.pdf$/i, "")}.txt`
-        : "tsp.txt";
-    const kb = plainText.length / 1024;
-    ui.downloadText.textContent = `Download text (${
-      kb < 1024 ? kb.toFixed(0) + " KB" : (kb / 1024).toFixed(1) + " MB"
-    })`;
+    ui.downloadText.download = single
+      ? optimisedName(single, "txt")
+      : "optimised_documents.txt";
+    ui.downloadText.textContent = `Download text (${humanSize(plainText.length)})`;
     ui.copy.textContent = `Copy text (~${Math.round(
       plainText.length / 4
     ).toLocaleString()} tokens)`;
@@ -582,31 +696,11 @@ async function offerResults(scannedTotal) {
 
 async function copyText() {
   if (!plainText) return;
-  const label = ui.copy.textContent;
-  try {
-    await navigator.clipboard.writeText(plainText);
-  } catch {
-    // Older browsers, or a page without clipboard permission.
-    const holder = document.createElement("textarea");
-    holder.value = plainText;
-    holder.setAttribute("readonly", "");
-    holder.style.position = "fixed";
-    holder.style.opacity = "0";
-    document.body.append(holder);
-    holder.select();
-    const worked = document.execCommand && document.execCommand("copy");
-    holder.remove();
-    if (!worked) {
-      log("Could not reach the clipboard. Use Download text instead.");
-      return;
-    }
+  if (await toClipboard(plainText)) {
+    flash(ui.copy, "Copied");
+  } else {
+    log("Could not reach the clipboard. Use Download text instead.");
   }
-  ui.copy.textContent = "Copied";
-  ui.copy.disabled = true;
-  setTimeout(() => {
-    ui.copy.textContent = label;
-    ui.copy.disabled = false;
-  }, 1600);
 }
 
 async function saveToFolder() {

@@ -120,13 +120,14 @@ function process({ id, name, bytes, threshold, dpi, tables }) {
   reply(id, { name, report: JSON.parse(report_json) });
 }
 
-function deliver(id) {
-  const names = JSON.parse(pyodide.globals.get("tsp_files")());
+function deliver(id, name) {
+  // name limits both calls to one document; omit it for the whole batch.
+  const names = JSON.parse(pyodide.globals.get("tsp_files")(name));
   if (!names.length) {
     reply(id, { names: [], bytes: null });
     return;
   }
-  const proxy = pyodide.globals.get("tsp_zip")();
+  const proxy = pyodide.globals.get("tsp_zip")(name);
   const bytes = proxy.toJs ? proxy.toJs() : proxy;
   if (proxy.destroy) proxy.destroy();
   reply(id, { names, bytes }, [bytes.buffer]);
@@ -151,10 +152,10 @@ self.onmessage = async (event) => {
         process(message);
         break;
       case "deliver":
-        deliver(id);
+        deliver(id, message.name);
         break;
       case "text":
-        reply(id, { text: pyodide.globals.get("tsp_text")() });
+        reply(id, { text: pyodide.globals.get("tsp_text")(message.name) });
         break;
       case "read":
         readOne(id, message.path);

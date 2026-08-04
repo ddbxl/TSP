@@ -90,8 +90,15 @@ console.log("process ->", proc.report.message);
 const text = await ask("text");
 console.log("text -> settled;", text.text.length, "chars");
 
+const textOne = await ask("text", { name: "sample.pdf" });
+console.log("text (one document) -> settled;", textOne.text.length, "chars");
+
 const out = await ask("deliver");
 console.log("deliver ->", out.names.length, "files,", out.bytes.length, "bytes");
+
+const outOne = await ask("deliver", { name: "sample.pdf" });
+console.log("deliver (one document) ->", outOne.names.length, "files,",
+            outOne.bytes.length, "bytes");
 
 const one = await ask("read", { path: out.names[0] });
 console.log("read ->", one.path, one.bytes.length, "bytes");

@@ -17,6 +17,15 @@ WORK = Path("/work")
 def tsp_target(name):
     return WORK / "out" / f"{Path(name).stem}_TSP"
 
+
+def _folders(name=None):
+    """One document's output folder, or every one of them."""
+    root = WORK / "out"
+    if name:
+        target = tsp_target(name)
+        return [target] if target.is_dir() else []
+    return sorted(p for p in root.iterdir() if p.is_dir())
+
 def tsp_drop(name):
     """Forget one document's output."""
     import shutil
@@ -55,30 +64,45 @@ def tsp_process(name, threshold_pct, dpi, tables, report):
         "warnings": result.warnings[:5],
     })
 
-def tsp_zip():
+def tsp_zip(name=None):
+    """A zip of everything written, or of one document's folder."""
     root = WORK / "out"
+    only = tsp_target(name).name if name else None
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(root.rglob("*")):
-            if path.is_file():
-                archive.write(path, path.relative_to(root).as_posix())
+            if not path.is_file():
+                continue
+            relative = path.relative_to(root)
+            if only and relative.parts[0] != only:
+                continue
+            archive.write(path, relative.as_posix())
     return buffer.getvalue()
 
-def tsp_text():
-    """Every document's text, joined. Manifests are left out."""
-    root = WORK / "out"
+def tsp_text(name=None):
+    """Extracted text, joined. One document when named, otherwise all of them.
+
+    Manifests are left out: nobody wants those in a paste.
+    """
     parts = []
-    for folder in sorted(p for p in root.iterdir() if p.is_dir()):
+    for folder in _folders(name):
         for txt in sorted(folder.glob("*.txt")):
             if txt.name != "MANIFEST.txt":
                 parts.append(txt.read_text(encoding="utf-8"))
     return "\n\n".join(parts)
 
-def tsp_files():
+def tsp_files(name=None):
     root = WORK / "out"
-    return json.dumps([
-        p.relative_to(root).as_posix() for p in sorted(root.rglob("*")) if p.is_file()
-    ])
+    only = tsp_target(name).name if name else None
+    found = []
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root)
+        if only and relative.parts[0] != only:
+            continue
+        found.append(relative.as_posix())
+    return json.dumps(found)
 
 def tsp_read(relative):
     return (WORK / "out" / relative).read_bytes()
