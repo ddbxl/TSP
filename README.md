@@ -14,8 +14,8 @@ so you can see what came off.
 ## Install
 
 ```bash
-git clone https://github.com/ddbxl/tsp.git
-cd tsp
+git clone https://github.com/ddbxl/TSP.git
+cd TSP
 pip install -e .
 ```
 
@@ -105,7 +105,7 @@ in the browser against 1.0 second on the desktop.
 [docs/BROWSER.md](docs/BROWSER.md) covers the version pinning rule, browser
 support, measured timings and the test results.
 
-Live at <https://ddbxl.github.io/tsp/>.
+Live at <https://ddbxl.github.io/TSP/>.
 
 Push to `main` and `.github/workflows/pages.yml` assembles the site, copies
 `src/tsp/core.py` in as the engine, and deploys. Every path in `index.html` and
