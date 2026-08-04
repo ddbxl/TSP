@@ -459,3 +459,35 @@ def test_bridge_only_imports_what_pyodide_provides():
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             found.add(node.module.split(".")[0])
     assert not found - allowed, f"unexpected imports: {sorted(found - allowed)}"
+
+
+def test_every_request_the_page_makes_has_a_handler_in_the_worker():
+    """The page hung once because it sent a request the worker answered with a
+    reply nothing was listening for. Requests and cases must line up."""
+    import re
+
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    worker = (WEB / "worker.js").read_text(encoding="utf-8")
+
+    asked = set(re.findall(r'ask\("(\w+)"', app))
+    handled = set(re.findall(r'case "(\w+)":', worker))
+    assert asked <= handled, f"worker has no case for: {sorted(asked - handled)}"
+
+
+def test_replies_are_keyed_by_request_id():
+    """Matching replies to requests by name is what broke. The page must settle
+    on the echoed id instead."""
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    worker = (WEB / "worker.js").read_text(encoding="utf-8")
+
+    assert "message.id !== undefined" in app, "the page must settle replies by id"
+    assert "function reply(id" in worker, "the worker must echo the request id"
+
+
+def test_a_failed_request_rejects_rather_than_hanging():
+    worker = (WEB / "worker.js").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+
+    assert "failed: detail" in worker, "errors must come back against the id"
+    assert "message.failed" in app, "the page must turn a failure into a rejection"
+    assert "rejectAll" in app, "a dead worker must not leave promises waiting"

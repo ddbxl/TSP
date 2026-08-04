@@ -28,6 +28,14 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- The browser hung after processing, with no download offered. The page matched
+  replies to requests by name and had no entry for two of them, so a request
+  waited for ever and everything after it stalled. Requests now carry an id the
+  worker echoes, a failed request rejects rather than hanging, a stopped worker
+  rejects whatever was outstanding, and `web/protocol_check.mjs` drives every
+  request through the real worker to prove each one settles.
+- The download depended on the text step succeeding. The zip is offered first,
+  so a failure preparing the text no longer hides it.
 - The browser engine would not start. The bridge Python sat inside a JavaScript
   template literal, which rewrote `\n` into a real newline and broke a string
   literal. The bridge is now `web/bridge.py`, a real file the worker fetches, so

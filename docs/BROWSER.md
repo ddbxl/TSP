@@ -186,6 +186,25 @@ institutional reports carry on every page.
 That run also covered the memory question for documents of that size. MEMFS held
 an 8.6 MB PDF, its text and 29 pixmaps at once without trouble.
 
+## Checking the protocol
+
+The page and the worker exchange messages. A request whose reply nothing settles
+leaves the interface waiting for ever, and no static check finds that, so
+`web/protocol_check.mjs` drives every request through the real worker in a faked
+worker environment:
+
+```bash
+npm install pyodide
+node web/protocol_check.mjs any.pdf
+```
+
+It exits non-zero if a request goes unanswered. Set `TSP_WHEEL` to a wheel on
+disk to skip the download.
+
+Requests carry an id and the worker echoes it, so adding one needs no change to
+the page's message handler. Matching replies by name was how a reply once went
+unhandled.
+
 ## Open on real browsers
 
 1. A very large document. A 200 MB scan at 300 dpi may still exhaust the tab.
