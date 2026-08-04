@@ -27,6 +27,7 @@ def stage() -> None:
         sys.exit(f"engine missing at {engine}")
     shutil.copy2(engine, WEB / "tsp_core.py")
 
+    # bridge.py already lives in web/, so only the engine needs staging.
     for name in ("icon.svg", "favicon.png"):
         source = ROOT / "assets" / name
         if source.is_file():

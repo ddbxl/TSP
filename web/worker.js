@@ -14,78 +14,6 @@ const PYPI_METADATA = "https://pypi.org/pypi/pymupdf/json";
 
 let pyodide = null;
 
-const GLUE = `
-import io, json, zipfile
-from pathlib import Path
-from tsp.core import Settings, process_pdf, tesseract_available
-
-WORK = Path("/work")
-
-def tsp_process(name, threshold_pct, dpi, tables, report):
-    """Process one PDF. 'report' is a JS callback taking (page, pages)."""
-    settings = Settings(
-        image_threshold=1.01 if threshold_pct >= 100 else threshold_pct / 100.0,
-        render_zoom=max(0.25, dpi / 72.0),
-        render_visual_pages=threshold_pct < 100,
-        extract_tables=bool(tables),
-        output_dir=WORK / "out",
-    )
-    result = process_pdf(
-        WORK / "in" / name,
-        settings,
-        progress=lambda done, total: report(done, total),
-    )
-    return json.dumps({
-        "ok": result.ok,
-        "message": result.message,
-        "pages": result.pages,
-        "images": result.images_saved,
-        "tables": result.tables_found,
-        "scanned": result.scanned_pages,
-        "needs_ocr": result.needs_ocr,
-        "tokens_in": result.tokens_in,
-        "tokens_out": result.tokens_out,
-        "saving": round(result.saving, 4),
-        "warnings": result.warnings[:5],
-    })
-
-def tsp_zip():
-    root = WORK / "out"
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(root.rglob("*")):
-            if path.is_file():
-                archive.write(path, path.relative_to(root).as_posix())
-    return buffer.getvalue()
-
-def tsp_text():
-    """Every document's text, joined. Manifests are left out."""
-    root = WORK / "out"
-    parts = []
-    for folder in sorted(p for p in root.iterdir() if p.is_dir()):
-        for txt in sorted(folder.glob("*.txt")):
-            if txt.name != "MANIFEST.txt":
-                parts.append(txt.read_text(encoding="utf-8"))
-    return "\n\n".join(parts)
-
-def tsp_files():
-    root = WORK / "out"
-    return json.dumps([
-        p.relative_to(root).as_posix() for p in sorted(root.rglob("*")) if p.is_file()
-    ])
-
-def tsp_read(relative):
-    return (WORK / "out" / relative).read_bytes()
-
-def tsp_clear():
-    import shutil
-    for folder in ("in", "out"):
-        target = WORK / folder
-        if target.exists():
-            shutil.rmtree(target)
-        target.mkdir(parents=True, exist_ok=True)
-`;
-
 function say(type, payload = {}) {
   self.postMessage({ type, ...payload });
 }
@@ -120,7 +48,18 @@ async function installPyMuPDF() {
   return "direct wheel";
 }
 
-async function boot(coreUrl) {
+async function fetchText(url, what) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `${what} returned ${response.status}. Running locally? Start with ` +
+        `"python web/serve.py", which stages the engine.`
+    );
+  }
+  return response.text();
+}
+
+async function boot(coreUrl, bridgeUrl) {
   if (pyodide) return;
 
   say("status", { state: "loading", text: "Downloading Python runtime, about 10 MB" });
@@ -135,27 +74,21 @@ async function boot(coreUrl) {
   const route = await installPyMuPDF();
 
   say("status", { state: "loading", text: "Loading the TSP engine" });
-  const source = await fetch(coreUrl).then((response) => {
-    if (!response.ok) {
-      throw new Error(
-        `tsp_core.py returned ${response.status}. Running locally? Start with ` +
-          `"python web/serve.py", which stages the engine.`
-      );
-    }
-    return response.text();
-  });
+  const [engine, bridge] = await Promise.all([
+    fetchText(coreUrl, "tsp_core.py"),
+    fetchText(bridgeUrl, "bridge.py"),
+  ]);
 
   pyodide.FS.mkdirTree("/lib/tsp");
   pyodide.FS.writeFile("/lib/tsp/__init__.py", "");
-  pyodide.FS.writeFile("/lib/tsp/core.py", source);
+  pyodide.FS.writeFile("/lib/tsp/core.py", engine);
   pyodide.FS.mkdirTree("/work/in");
   pyodide.FS.mkdirTree("/work/out");
 
-  await pyodide.runPythonAsync(`
-import sys
-sys.path.insert(0, "/lib")
-`);
-  await pyodide.runPythonAsync(GLUE);
+  await pyodide.runPythonAsync('import sys; sys.path.insert(0, "/lib")');
+  // bridge.py is a real file rather than a string in this one, so nothing
+  // rewrites its escape sequences on the way in.
+  await pyodide.runPythonAsync(bridge);
 
   const version = pyodide.runPython("import pymupdf; pymupdf.__version__");
   say("ready", {
@@ -204,7 +137,7 @@ self.onmessage = async (event) => {
   try {
     switch (message.type) {
       case "boot":
-        await boot(message.coreUrl);
+        await boot(message.coreUrl, message.bridgeUrl);
         break;
       case "process":
         process(message);
@@ -214,6 +147,10 @@ self.onmessage = async (event) => {
         break;
       case "text":
         say("text", { text: pyodide.globals.get("tsp_text")() });
+        break;
+      case "drop":
+        pyodide.globals.get("tsp_drop")(message.name);
+        say("dropped", { name: message.name });
         break;
       case "read":
         readOne(message.path);

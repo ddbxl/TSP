@@ -190,6 +190,17 @@ h1 {
 .queue .state--done { color: var(--teal); }
 .queue .state--failed { color: var(--red); }
 
+.queue .remove {
+  flex: 0 0 auto;
+  padding: 0 0.3rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: #b3bac4;
+  text-decoration: none;
+}
+.queue .remove:hover:enabled { color: var(--red); }
+.queue .remove:disabled { opacity: 0.3; cursor: default; }
+
 /* -- controls ---------------------------------------------------------- */
 
 .controls {
@@ -382,6 +393,57 @@ select {
   white-space: pre-wrap;
 }
 .log:empty { display: none; }
+
+/* -- failure ----------------------------------------------------------- */
+
+.failure {
+  margin-top: 1.25rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid #e8cfcd;
+  border-left: 3px solid var(--red);
+  border-radius: 8px;
+  background: #fdf7f6;
+}
+
+.failure__lead {
+  margin: 0;
+  font-weight: 600;
+  color: #7f2d28;
+}
+.failure__hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #8a5450;
+}
+.failure__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.failure__more {
+  margin-top: 0.9rem;
+  font-size: 0.82rem;
+}
+.failure__more summary {
+  cursor: pointer;
+  color: var(--muted);
+  font: 0.8rem var(--mono);
+}
+.failure__more pre {
+  margin: 0.6rem 0 0;
+  padding: 0.7rem 0.8rem;
+  max-height: 15rem;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--ink);
+  color: #cbd5e1;
+  font: 0.74rem/1.5 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 footer {
   margin-top: 2.5rem;

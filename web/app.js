@@ -10,6 +10,7 @@
 
 const WORKER_URL = new URL("./worker.js", import.meta.url);
 const CORE_URL = new URL("./tsp_core.py", import.meta.url);
+const BRIDGE_URL = new URL("./bridge.py", import.meta.url);
 
 const MODES = [
   { label: "Text documents (5%)", value: 5 },
@@ -46,7 +47,17 @@ const ui = {
   folderHint: el("folder-hint"),
   notice: el("notice"),
   log: el("log"),
+  failure: el("failure"),
+  failureLead: el("failure-lead"),
+  failureHint: el("failure-hint"),
+  failureTrace: el("failure-trace"),
+  failureCopy: el("failure-copy"),
+  failureReport: el("failure-report"),
 };
+
+const REPO = "https://github.com/ddbxl/TSP";
+const PYODIDE_PINNED = "0.29.4";
+const WHEEL_PLATFORM = "pyemscripten_2025_0_wasm32";
 
 let worker = null;
 let booted = false;
@@ -62,8 +73,9 @@ function spawn() {
   worker = new Worker(WORKER_URL);
   worker.onmessage = (event) => handle(event.data);
   worker.onerror = (event) => {
-    setEngine("failed", "Engine crashed");
-    log(String(event.message || "worker error"));
+    setEngine("failed", "Engine stopped");
+    log("");
+    showFailure("The engine stopped unexpectedly.", event.message);
     finishRun();
   };
 }
@@ -125,14 +137,14 @@ function boot() {
   if (booted) return Promise.resolve(true);
   if (booting) return booting;
   if (!worker) spawn();
-  booting = ask("boot", { coreUrl: CORE_URL.href }).catch((error) => {
+  booting = ask("boot", {
+    coreUrl: CORE_URL.href,
+    bridgeUrl: BRIDGE_URL.href,
+  }).catch((error) => {
     booting = null;
     setEngine("failed", "Engine failed to start");
-    log(
-      `${error.message}\n\nOpen the console for the full trace. A mismatch ` +
-        `between the pinned Pyodide version and the wheel platform is the ` +
-        `usual cause; see docs/BROWSER.md.`
-    );
+    log("");
+    showFailure("The engine did not start.", error && error.message);
     throw error;
   });
   return booting;
@@ -150,6 +162,77 @@ function log(line) {
   ui.log.textContent = line;
 }
 
+/* Turns whatever went wrong into something a person can act on, keeps the
+   trace collapsed, and offers to file it. */
+
+function guessCause(detail) {
+  const text = String(detail || "");
+  if (/tsp_core\.py|bridge\.py|returned 404/i.test(text)) {
+    return "A file the engine needs did not load. If you are running this " +
+      "locally, start it with \u201cpython web/serve.py\u201d.";
+  }
+  if (/SyntaxError|unterminated|invalid syntax/i.test(text)) {
+    return "The engine loaded but would not compile. That is a bug in TSP " +
+      "rather than anything you did.";
+  }
+  if (/micropip|wheel|pymupdf|no matching distribution/i.test(text)) {
+    return "PyMuPDF would not install. The pinned Pyodide version and the " +
+      "wheel it expects may have drifted apart.";
+  }
+  if (/NetworkError|Failed to fetch|ERR_|offline/i.test(text)) {
+    return "Something blocked the download. A firewall, an extension or a " +
+      "dropped connection would each do it.";
+  }
+  if (/memory|allocat|RangeError/i.test(text)) {
+    return "The tab ran out of memory. A smaller document, or a desktop " +
+      "browser, should get further.";
+  }
+  return "Reporting it with the details below is the most useful thing you " +
+    "can do next.";
+}
+
+function diagnostics(detail) {
+  return [
+    `TSP browser build`,
+    `page: ${location.href}`,
+    `pinned pyodide: ${PYODIDE_PINNED}`,
+    `wheel platform: ${WHEEL_PLATFORM}`,
+    `browser: ${navigator.userAgent}`,
+    `when: ${new Date().toISOString()}`,
+    ``,
+    String(detail || "no detail captured"),
+  ].join("\n");
+}
+
+function showFailure(lead, detail) {
+  const report = diagnostics(detail);
+  ui.failureLead.textContent = lead;
+  ui.failureHint.textContent = guessCause(detail);
+  ui.failureTrace.textContent = report;
+
+  const body = report.length > 1600 ? `${report.slice(0, 1600)}\n[truncated]` : report;
+  ui.failureReport.href =
+    `${REPO}/issues/new?labels=bug` +
+    `&title=${encodeURIComponent(lead)}` +
+    `&body=${encodeURIComponent("What happened:\n\n\n---\n\n```\n" + body + "\n```")}`;
+
+  ui.failureCopy.onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(report);
+      ui.failureCopy.textContent = "Copied";
+      setTimeout(() => (ui.failureCopy.textContent = "Copy details"), 1600);
+    } catch {
+      ui.failureTrace.parentElement.open = true;
+    }
+  };
+
+  ui.failure.hidden = false;
+}
+
+function clearFailure() {
+  ui.failure.hidden = true;
+}
+
 function notice(html) {
   ui.notice.innerHTML = html;
   ui.notice.hidden = !html;
@@ -163,6 +246,39 @@ function showProgress(name, page, pages) {
 
 /* -- queue -------------------------------------------------------------- */
 
+function markStale(entry) {
+  if (entry.state === "done" || entry.state === "failed") {
+    entry.state = "queued";
+    entry.report = null;
+    recomputeTotals();
+    render();
+  }
+}
+
+function staleAll() {
+  let touched = false;
+  for (const entry of queue) {
+    if (entry.state === "done" || entry.state === "failed") {
+      entry.state = "queued";
+      entry.report = null;
+      touched = true;
+    }
+  }
+  if (touched) {
+    recomputeTotals();
+    render();
+  }
+}
+
+function drop(index) {
+  const [entry] = queue.splice(index, 1);
+  if (entry && entry.report && booted) {
+    ask("drop", { name: entry.file.name }).catch(() => {});
+  }
+  recomputeTotals();
+  render();
+}
+
 function addFiles(files) {
   const known = new Set(queue.map((e) => `${e.file.name}:${e.file.size}`));
   let added = 0;
@@ -171,7 +287,13 @@ function addFiles(files) {
     const key = `${file.name}:${file.size}`;
     if (known.has(key)) continue;
     known.add(key);
-    queue.push({ file, mode: MODES[0].value, tables: false, state: "queued" });
+    queue.push({
+      file,
+      mode: MODES[0].value,
+      tables: false,
+      state: "queued",
+      report: null,
+    });
     added += 1;
   }
   if (added) {
@@ -206,6 +328,7 @@ function render() {
     select.disabled = running;
     select.addEventListener("change", () => {
       entry.mode = Number(select.value);
+      markStale(entry);
     });
 
     const tables = document.createElement("label");
@@ -218,35 +341,37 @@ function render() {
     box.disabled = running;
     box.addEventListener("change", () => {
       entry.tables = box.checked;
+      markStale(entry);
     });
     tables.append(box, document.createTextNode("Tables"));
 
     const state = document.createElement("span");
     state.className = "state";
-    if (entry.state === "done") {
+    if (entry.state === "done" && entry.report) {
       state.classList.add("state--done");
-      const bits = [`${entry.pages}p`];
-      if (entry.images) bits.push(`${entry.images} img`);
-      if (entry.tableCount) bits.push(`${entry.tableCount} tbl`);
+      const bits = [`${entry.report.pages}p`];
+      if (entry.report.images) bits.push(`${entry.report.images} img`);
+      if (entry.report.tables) bits.push(`${entry.report.tables} tbl`);
       state.textContent = bits.join(", ");
     } else if (entry.state === "failed") {
       state.classList.add("state--failed");
       state.textContent = "failed";
     } else if (entry.state === "working") {
       state.textContent = "working";
-    } else if (!running) {
-      const remove = document.createElement("button");
-      remove.className = "link";
-      remove.type = "button";
-      remove.textContent = "Remove";
-      remove.addEventListener("click", () => {
-        queue.splice(index, 1);
-        render();
-      });
-      state.append(remove);
+    } else {
+      state.textContent = "ready";
     }
 
-    row.append(name, size, select, tables, state);
+    const remove = document.createElement("button");
+    remove.className = "link remove";
+    remove.type = "button";
+    remove.textContent = "\u00d7";
+    remove.title = `Remove ${entry.file.name}`;
+    remove.setAttribute("aria-label", `Remove ${entry.file.name}`);
+    remove.disabled = running;
+    remove.addEventListener("click", () => drop(index));
+
+    row.append(name, size, select, tables, state, remove);
     ui.queue.append(row);
   });
 
@@ -255,10 +380,16 @@ function render() {
 
 function refresh() {
   const waiting = queue.filter((e) => e.state === "queued").length;
-  ui.run.disabled = running || waiting === 0;
-  ui.run.textContent = waiting
-    ? `Process ${waiting} file${waiting === 1 ? "" : "s"}`
-    : "Process files";
+  const finished = queue.filter((e) => e.state === "done").length;
+
+  ui.run.disabled = running || (waiting === 0 && finished === 0);
+  if (waiting) {
+    ui.run.textContent = `Process ${waiting} file${waiting === 1 ? "" : "s"}`;
+  } else if (finished) {
+    ui.run.textContent = `Process again`;
+  } else {
+    ui.run.textContent = "Process files";
+  }
   ui.cancel.hidden = !running;
   ui.reset.hidden = running || queue.length === 0;
   ui.bar.hidden = !running;
@@ -267,6 +398,20 @@ function refresh() {
 /* -- meter -------------------------------------------------------------- */
 
 const totals = { in: 0, out: 0, images: 0 };
+
+function recomputeTotals() {
+  totals.in = 0;
+  totals.out = 0;
+  totals.images = 0;
+  for (const entry of queue) {
+    if (entry.state === "done" && entry.report) {
+      totals.in += entry.report.tokens_in;
+      totals.out += entry.report.tokens_out;
+      totals.images += entry.report.images;
+    }
+  }
+  updateMeter();
+}
 
 function updateMeter() {
   const cut = totals.in ? 1 - totals.out / totals.in : 0;
@@ -282,6 +427,7 @@ function updateMeter() {
 async function run() {
   ui.results.hidden = true;
   notice("");
+  clearFailure();
 
   try {
     await boot();
@@ -289,11 +435,16 @@ async function run() {
     return;
   }
 
+  // Nothing queued means "Process again": rerun the lot with whatever the
+  // settings say now. The File objects are still held, so no re-picking.
+  if (!queue.some((entry) => entry.state === "queued")) {
+    staleAll();
+  }
+
   running = true;
   render();
 
   const dpi = Number(ui.dpi.value);
-  let scannedTotal = 0;
 
   for (const entry of queue.filter((e) => e.state === "queued")) {
     if (!running) break;
@@ -313,27 +464,31 @@ async function run() {
 
       if (report.ok) {
         entry.state = "done";
-        entry.pages = report.pages;
-        entry.images = report.images;
-        entry.tableCount = report.tables;
-        totals.in += report.tokens_in;
-        totals.out += report.tokens_out;
-        totals.images += report.images;
-        if (report.needs_ocr) scannedTotal += report.scanned;
-        updateMeter();
+        entry.report = report;
+        recomputeTotals();
         log(`${entry.file.name}: ${report.message}`);
       } else {
         entry.state = "failed";
+        entry.report = null;
+        recomputeTotals();
         log(`${entry.file.name}: ${report.message}`);
       }
     } catch (error) {
       entry.state = "failed";
-      log(`${entry.file.name}: ${error.message}`);
+      log(`${entry.file.name} could not be read.`);
+      showFailure(`${entry.file.name} could not be read.`, error && error.message);
     }
     render();
   }
 
-  if (running) await offerResults(scannedTotal);
+  if (running) {
+    const scanned = queue.reduce(
+      (total, entry) =>
+        total + (entry.report && entry.report.needs_ocr ? entry.report.scanned : 0),
+      0
+    );
+    await offerResults(scanned);
+  }
   finishRun();
 }
 
@@ -503,11 +658,12 @@ function cancel() {
 
 function resetAll() {
   queue = [];
-  totals.in = totals.out = totals.images = 0;
+  recomputeTotals();
   ui.results.hidden = true;
   notice("");
   plainText = "";
   ui.folderHint.hidden = true;
+  clearFailure();
   for (const anchor of [ui.download, ui.downloadText]) {
     if (anchor.dataset.url) {
       URL.revokeObjectURL(anchor.dataset.url);
@@ -522,7 +678,10 @@ function resetAll() {
 
 /* -- wiring ------------------------------------------------------------- */
 
-ui.boot.addEventListener("click", () => boot().catch(() => {}));
+ui.boot.addEventListener("click", () => {
+  clearFailure();
+  boot().catch(() => {});
+});
 ui.drop.addEventListener("click", () => ui.picker.click());
 ui.drop.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
@@ -547,6 +706,7 @@ ui.drop.addEventListener("drop", (event) => {
   event.preventDefault();
   addFiles(event.dataTransfer.files);
 });
+ui.dpi.addEventListener("change", staleAll);
 ui.run.addEventListener("click", () => run());
 ui.cancel.addEventListener("click", cancel);
 ui.reset.addEventListener("click", resetAll);

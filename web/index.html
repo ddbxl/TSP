@@ -114,6 +114,20 @@
     </div>
 
     <p id="log" class="log" role="status" aria-live="polite"></p>
+
+    <div id="failure" class="failure" hidden>
+      <p class="failure__lead" id="failure-lead"></p>
+      <p class="failure__hint" id="failure-hint"></p>
+      <div class="failure__actions">
+        <a id="failure-report" class="button button--plain" target="_blank"
+           rel="noopener">Report this</a>
+        <button id="failure-copy" class="link" type="button">Copy details</button>
+      </div>
+      <details class="failure__more">
+        <summary>Technical details</summary>
+        <pre id="failure-trace"></pre>
+      </details>
+    </div>
   </section>
 </main>
 
