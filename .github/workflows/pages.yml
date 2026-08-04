@@ -28,8 +28,9 @@ jobs:
       - name: Assemble the site
         run: |
           mkdir -p _site
-          cp web/index.html web/style.css web/app.js web/worker.js _site/
-          cp web/bridge.py _site/
+          for f in index.html style.css app.js worker.js bridge.py; do
+            cp "web/$f" _site/
+          done
           cp assets/icon.svg assets/favicon.png _site/
           # One engine serves both targets: src/tsp/core.py.
           cp src/tsp/core.py _site/tsp_core.py
@@ -37,13 +38,22 @@ jobs:
 
       - name: Check every web file reached the site
         run: |
+          # Catches a new file in web/ that nobody remembered to copy. Local
+          # tooling is named here so it is skipped on purpose rather than by a
+          # glob that happens not to match it.
           missing=0
-          for f in web/*.html web/*.css web/*.js web/bridge.py; do
+          for f in web/*; do
             name=$(basename "$f")
-            if [ ! -f "_site/$name" ]; then echo "missing from _site: $name"; missing=1; fi
+            case "$name" in
+              serve.py|protocol_check.mjs) continue ;;
+            esac
+            if [ ! -f "_site/$name" ]; then
+              echo "missing from _site: $name"
+              missing=1
+            fi
           done
           [ "$missing" = "0" ] || exit 1
-          echo "all web files copied"
+          echo "every site file copied"
 
       - name: Check the Python that runs in the browser compiles
         run: |
