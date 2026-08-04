@@ -58,6 +58,16 @@ def tsp_zip():
                 archive.write(path, path.relative_to(root).as_posix())
     return buffer.getvalue()
 
+def tsp_text():
+    """Every document's text, joined. Manifests are left out."""
+    root = WORK / "out"
+    parts = []
+    for folder in sorted(p for p in root.iterdir() if p.is_dir()):
+        for txt in sorted(folder.glob("*.txt")):
+            if txt.name != "MANIFEST.txt":
+                parts.append(txt.read_text(encoding="utf-8"))
+    return "\n\n".join(parts)
+
 def tsp_files():
     root = WORK / "out"
     return json.dumps([
@@ -201,6 +211,9 @@ self.onmessage = async (event) => {
         break;
       case "deliver":
         deliver();
+        break;
+      case "text":
+        say("text", { text: pyodide.globals.get("tsp_text")() });
         break;
       case "read":
         readOne(message.path);

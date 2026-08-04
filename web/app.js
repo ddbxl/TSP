@@ -39,8 +39,11 @@ const ui = {
   statCut: el("stat-cut"),
   statImg: el("stat-img"),
   results: el("results"),
+  copy: el("copy"),
+  downloadText: el("download-text"),
   download: el("download"),
   saveFolder: el("save-folder"),
+  folderHint: el("folder-hint"),
   notice: el("notice"),
   log: el("log"),
 };
@@ -50,6 +53,7 @@ let booted = false;
 let booting = null;
 let running = false;
 let queue = [];
+let plainText = "";
 const pending = new Map(); // request type -> resolver
 
 /* -- worker plumbing ---------------------------------------------------- */
@@ -352,14 +356,47 @@ async function offerResults(scannedTotal) {
     return;
   }
 
+  // The zip carries everything, including page images.
   const blob = new Blob([output.bytes], { type: "application/zip" });
   if (ui.download.dataset.url) URL.revokeObjectURL(ui.download.dataset.url);
-  const url = URL.createObjectURL(blob);
-  ui.download.href = url;
-  ui.download.dataset.url = url;
-  ui.download.textContent = `Download ${output.names.length} file${
-    output.names.length === 1 ? "" : "s"
-  } (${(blob.size / 1048576).toFixed(1)} MB)`;
+  const zipUrl = URL.createObjectURL(blob);
+  ui.download.href = zipUrl;
+  ui.download.dataset.url = zipUrl;
+  ui.download.textContent = `Download everything as a zip (${
+    output.names.length
+  } files, ${(blob.size / 1048576).toFixed(1)} MB)`;
+
+  // The text on its own is what most people are after.
+  try {
+    const answer = await ask("text");
+    plainText = answer.text || "";
+  } catch {
+    plainText = "";
+  }
+
+  if (plainText) {
+    const textBlob = new Blob([plainText], { type: "text/plain;charset=utf-8" });
+    if (ui.downloadText.dataset.url) {
+      URL.revokeObjectURL(ui.downloadText.dataset.url);
+    }
+    const textUrl = URL.createObjectURL(textBlob);
+    const done = queue.filter((e) => e.state === "done");
+    ui.downloadText.href = textUrl;
+    ui.downloadText.dataset.url = textUrl;
+    ui.downloadText.download =
+      done.length === 1
+        ? `${done[0].file.name.replace(/\.pdf$/i, "")}.txt`
+        : "tsp.txt";
+    const kb = plainText.length / 1024;
+    ui.downloadText.textContent = `Download text (${
+      kb < 1024 ? kb.toFixed(0) + " KB" : (kb / 1024).toFixed(1) + " MB"
+    })`;
+    ui.copy.textContent = `Copy text (~${Math.round(
+      plainText.length / 4
+    ).toLocaleString()} tokens)`;
+  }
+  ui.copy.hidden = !plainText;
+  ui.downloadText.hidden = !plainText;
 
   ui.results.hidden = false;
   ui.saveFolder.hidden = !("showDirectoryPicker" in window);
@@ -376,10 +413,44 @@ async function offerResults(scannedTotal) {
   }
 }
 
+async function copyText() {
+  if (!plainText) return;
+  const label = ui.copy.textContent;
+  try {
+    await navigator.clipboard.writeText(plainText);
+  } catch {
+    // Older browsers, or a page without clipboard permission.
+    const holder = document.createElement("textarea");
+    holder.value = plainText;
+    holder.setAttribute("readonly", "");
+    holder.style.position = "fixed";
+    holder.style.opacity = "0";
+    document.body.append(holder);
+    holder.select();
+    const worked = document.execCommand && document.execCommand("copy");
+    holder.remove();
+    if (!worked) {
+      log("Could not reach the clipboard. Use Download text instead.");
+      return;
+    }
+  }
+  ui.copy.textContent = "Copied";
+  ui.copy.disabled = true;
+  setTimeout(() => {
+    ui.copy.textContent = label;
+    ui.copy.disabled = false;
+  }, 1600);
+}
+
 async function saveToFolder() {
   if (!("showDirectoryPicker" in window)) return;
   try {
-    const root = await window.showDirectoryPicker({ mode: "readwrite" });
+    const root = await window.showDirectoryPicker({
+      mode: "readwrite",
+      id: "tsp-output", // the browser reopens where you saved last
+      startIn: "documents", // Chrome refuses Downloads itself
+    });
+    ui.folderHint.hidden = true;
     const output = await ask("deliver");
     for (const name of output.names) {
       const answer = await ask("read", { path: name });
@@ -395,7 +466,15 @@ async function saveToFolder() {
     }
     log(`Saved ${output.names.length} files to ${root.name}.`);
   } catch (error) {
-    if (error && error.name !== "AbortError") log(`Could not save: ${error}`);
+    // Chrome raises AbortError both when the picker is dismissed and when it
+    // judges the chosen folder too sensitive to write to, so the two cases
+    // cannot be told apart. Show the hint either way.
+    if (error && error.name === "AbortError") {
+      ui.folderHint.hidden = false;
+      log("No folder saved to.");
+    } else {
+      log(`Could not save: ${error && error.message ? error.message : error}`);
+    }
   }
 }
 
@@ -427,9 +506,13 @@ function resetAll() {
   totals.in = totals.out = totals.images = 0;
   ui.results.hidden = true;
   notice("");
-  if (ui.download.dataset.url) {
-    URL.revokeObjectURL(ui.download.dataset.url);
-    delete ui.download.dataset.url;
+  plainText = "";
+  ui.folderHint.hidden = true;
+  for (const anchor of [ui.download, ui.downloadText]) {
+    if (anchor.dataset.url) {
+      URL.revokeObjectURL(anchor.dataset.url);
+      delete anchor.dataset.url;
+    }
   }
   if (booted) ask("clear").catch(() => {});
   updateMeter();
@@ -468,6 +551,7 @@ ui.run.addEventListener("click", () => run());
 ui.cancel.addEventListener("click", cancel);
 ui.reset.addEventListener("click", resetAll);
 ui.saveFolder.addEventListener("click", saveToFolder);
+ui.copy.addEventListener("click", copyText);
 
 setEngine("waiting", "Engine idle, 28 MB to download on first use");
 updateMeter();

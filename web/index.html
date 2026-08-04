@@ -90,12 +90,27 @@
     <p id="notice" class="notice" hidden></p>
 
     <div id="results" class="results" hidden>
-      <a id="download" class="button button--quiet" download="tsp_output.zip">
-        Download results
-      </a>
-      <button id="save-folder" class="link" type="button" hidden>
-        Save to a folder instead
-      </button>
+      <div class="results__row">
+        <button id="copy" class="button button--quiet" type="button">
+          Copy text
+        </button>
+        <a id="download-text" class="button button--plain" download="tsp.txt">
+          Download text
+        </a>
+      </div>
+      <div class="results__row results__row--quiet">
+        <button id="save-folder" class="link" type="button" hidden>
+          Save every file to a folder
+        </button>
+        <a id="download" class="link" download="tsp_output.zip">
+          Download everything as a zip
+        </a>
+      </div>
+      <p id="folder-hint" class="hint" hidden>
+        Nothing saved. Chrome refuses to write to some folders, Downloads
+        among them, and reports that the same way as a cancelled dialogue.
+        Documents and Desktop both work.
+      </p>
     </div>
 
     <p id="log" class="log" role="status" aria-live="polite"></p>

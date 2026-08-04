@@ -343,13 +343,36 @@ select {
 .meter__note { margin: 1rem 0 0; font-size: 0.8rem; color: var(--muted); }
 
 .results {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1rem;
   margin-top: 1.25rem;
   padding-top: 1.25rem;
   border-top: 1px solid var(--rule);
+}
+
+.results__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.results__row--quiet {
+  margin-top: 0.9rem;
+  gap: 1.25rem;
+  font-size: 0.88rem;
+}
+
+.button--plain {
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+}
+.button--plain:hover { background: #f4f6f8; }
+
+.hint {
+  margin: 0.75rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 34rem;
 }
 
 .log {
