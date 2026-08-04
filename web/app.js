@@ -4,7 +4,7 @@
  * calls it. All extraction logic lives in src/tsp/core.py, so the browser and
  * the desktop run the same code.
  *
- * Copyright (C) 2026 TSP contributors
+ * Copyright (C) 2026 Daga D.
  * Licensed under the GNU General Public License v3.0 or later.
  */
 
