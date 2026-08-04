@@ -15,9 +15,9 @@ jobs:
         python: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -30,3 +30,45 @@ jobs:
 
       - name: Check the command line entry point
         run: tsp --help
+
+  # The page and the worker talk over messages. A request whose reply nothing
+  # settles leaves the interface waiting for ever, which no static check finds,
+  # so drive the real worker through every request it accepts.
+  protocol:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install
+        run: |
+          npm install --no-save pyodide@0.29.4
+          pip install pymupdf
+
+      - name: Make a document to feed it
+        run: |
+          python3 - <<'PY'
+          import pymupdf
+          doc = pymupdf.open()
+          for number in range(1, 5):
+              page = doc.new_page(width=595, height=842)
+              page.insert_text((60, 40), "Running header for every page", fontsize=8)
+              page.insert_text((60, 800), f"Page {number} of 4", fontsize=8)
+              page.insert_textbox(
+                  pymupdf.Rect(60, 70, 535, 780),
+                  "Text that carries across a line break, hyphen-\nated here. " * 12,
+                  fontsize=10,
+              )
+          doc.save("sample.pdf")
+          PY
+
+      - name: Drive every request through the worker
+        run: node web/protocol_check.mjs sample.pdf

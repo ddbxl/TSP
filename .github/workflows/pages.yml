@@ -23,7 +23,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Assemble the site
         run: |
@@ -57,7 +57,7 @@ jobs:
 
       - name: Check the Python that runs in the browser compiles
         run: |
-          python -c "
+          python3 -c "
           import ast, pathlib, sys
           for name in ('src/tsp/core.py', 'web/bridge.py'):
               try:
@@ -69,7 +69,7 @@ jobs:
 
       - name: Check the engine imports nothing unavailable in Pyodide
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           import ast, sys
           tree = ast.parse(open("src/tsp/core.py").read())
           allowed = {
@@ -89,7 +89,7 @@ jobs:
           print("engine imports look portable:", sorted(found))
           PY
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
@@ -101,4 +101,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
