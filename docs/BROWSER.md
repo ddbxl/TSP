@@ -70,12 +70,29 @@ To pin the wheel instead, drop the `.whl` into `web/` and pass the relative
 path to `loadPackage`. Same-origin hosting sidesteps CORS and removes the PyPI
 dependency, at the cost of 18 MB in the repository and on Pages bandwidth.
 
+## Which PyMuPDF the browser gets
+
+Pyodide ships a curated distribution of several hundred packages, and PyMuPDF
+sits in it. `micropip.install("pymupdf")` resolves that lockfile before it
+considers PyPI, so Pyodide 0.29.4 installs PyMuPDF 1.26.3 from the same CDN as
+the runtime rather than 1.28.0 from PyPI.
+
+That pairing is the tested one, and it keeps the download on a single origin.
+Every API the engine calls predates 1.26, so nothing breaks. Text extraction
+output can differ in small ways from a desktop install running a later MuPDF,
+which matters only when diffing browser output against desktop output on the
+same file.
+
+Forcing a version, `micropip.install("pymupdf==1.28.0")`, sends micropip to PyPI
+instead. That trades a tested pairing and a warm CDN for a larger download, so
+the app does not do it.
+
 ## What the visitor downloads
 
 | Item | Size | From |
 |---|---|---|
 | Pyodide runtime and stdlib | about 10 MB | jsDelivr |
-| PyMuPDF wheel | 18.4 MB | PyPI through micropip |
+| PyMuPDF wheel | about 18 MB | the Pyodide distribution, or PyPI as a fallback |
 | `index.html`, `style.css`, `app.js`, `tsp_core.py` | about 60 KB | GitHub Pages |
 
 The browser caches the first two after the first run. Nothing large sits in the
@@ -137,11 +154,9 @@ wheel resolution a browser uses:
 | `loadPackage(remoteWheelUrl)` works | yes |
 | CORS on the PyPI JSON API and on the wheel host | `access-control-allow-origin: *` on GET |
 
-One item stays open. `micropip.install("pymupdf")` reaches jsDelivr, which the
-test environment blocks, so that route is untested. The app tries micropip
-first and falls back to resolving the wheel URL from PyPI and calling
-`loadPackage` on it, which the table above covers. Both routes fetch the same
-file.
+Both install routes work. micropip is confirmed on a deployed Pages site,
+reporting `PyMuPDF 1.26.3 on Pyodide 0.29.4 via micropip`, and the PyPI fallback
+is confirmed in the table above.
 
 ## Speed
 
@@ -160,22 +175,34 @@ that spends its time inside MuPDF rather than in Python. The tab stops
 repainting for those 2.3 seconds. A 500-page document holds it for about 11
 seconds, which is where a Web Worker stops being optional.
 
+## Field results
+
+A deployed Pages site processed three EU study reports in one batch: 409 pages,
+2.9 MB, 8.6 MB and 0.7 MB, at the 5% threshold and 144 dpi. 51 pages rendered as
+images, 331,964 estimated tokens extracted, 275,685 kept, 17% trimmed. The 17%
+against 7 to 13% on synthetic fixtures reflects how much furniture real
+institutional reports carry on every page.
+
+That run also covered the memory question for documents of that size. MEMFS held
+an 8.6 MB PDF, its text and 29 pixmaps at once without trouble.
+
 ## Open on real browsers
 
-1. `micropip.install("pymupdf")` under Pyodide 0.29.4, untested because the
-   test environment blocks jsDelivr.
-2. A large document. MEMFS held a 7.6 MB PDF, its text and ten pixmaps without
-   trouble. A 200 MB scan at 300 dpi may exhaust the tab.
-3. The zip download on Safari, where Blob handling differs.
+1. A very large document. A 200 MB scan at 300 dpi may still exhaust the tab.
+2. The zip download on Safari, where Blob handling differs.
 
 ## Known gaps
 
 **Processing blocks the tab.** Python runs on the main thread, so the page
 cannot repaint while a page renders. A batch yields between files and no
-further. Measured at 2.3 seconds for 100 pages, so a typical report gets away
-with it and a 500-page one does not. Moving Pyodide into a Web Worker fixes it
-and costs a message-passing layer: the worker owns the interpreter, the page
-posts file bytes in and receives progress and output bytes back.
+further, which caps the longest block at whichever single document is largest.
+
+In practice this has not been a problem. A run of three documents totalling 409
+pages, the largest 308 pages and 8.6 MB, with 51 pages rendered to PNG, drew no
+complaint about responsiveness. Moving Pyodide into a Web Worker remains the fix
+if a document ever does stall the page, and costs a message-passing layer: the
+worker owns the interpreter, the page posts file bytes in and receives progress
+and output bytes back.
 
 **No cancel button.** Cancellation needs the worker above, since the main
 thread cannot interrupt a running Python call.
