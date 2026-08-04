@@ -60,6 +60,8 @@ class QueueItem:
     mode: tk.StringVar
     tables: tk.BooleanVar
     row: tk.Frame
+    state: tk.Label | None = None
+    report: Result | None = None
 
 
 def find_icon() -> Path | None:
@@ -170,6 +172,7 @@ class App:
             toolbar,
             text="Read scans (OCR)" if self.ocr_ready else "Read scans (needs Tesseract)",
             variable=self.ocr_var,
+            command=self._stale_all,
             state="normal" if self.ocr_ready else "disabled",
             bg=PAPER,
             fg=MUTED if self.ocr_ready else "#a8b0bb",
@@ -191,6 +194,7 @@ class App:
             width=9,
         )
         dpi_box.pack(side="right")
+        dpi_box.bind("<<ComboboxSelected>>", lambda _e: self._stale_all())
         tk.Label(
             toolbar, text="Image quality", font=FONT_SMALL, bg=PAPER, fg=MUTED
         ).pack(side="right", padx=(0, 6))
@@ -317,6 +321,11 @@ class App:
         ).pack(side="left", padx=6)
 
         tables = tk.BooleanVar(value=False)
+        state = tk.Label(
+            row, text="ready", bg=CARD, fg=MUTED, font=FONT_SMALL, width=13,
+            anchor="e",
+        )
+
         tk.Checkbutton(
             row,
             text="Tables",
@@ -331,7 +340,12 @@ class App:
             cursor="hand2",
         ).pack(side="left", padx=(2, 0))
 
-        item = QueueItem(path=path, mode=mode, tables=tables, row=container)
+        item = QueueItem(
+            path=path, mode=mode, tables=tables, row=container, state=state
+        )
+        state.pack(side="left", padx=(8, 0))
+        mode.trace_add("write", lambda *_: self._mark_stale(item))
+        tables.trace_add("write", lambda *_: self._mark_stale(item))
         tk.Button(
             row,
             text="Remove",
@@ -365,12 +379,30 @@ class App:
         self.status.config(text="Waiting for files.", fg=MUTED)
         self._refresh()
 
+    def _mark_stale(self, item: QueueItem) -> None:
+        """A changed setting makes an earlier result out of date."""
+        item.report = None
+        if item.state is not None:
+            item.state.config(text="ready", fg=MUTED)
+        self._refresh()
+
+    def _stale_all(self) -> None:
+        for item in self.items:
+            self._mark_stale(item)
+
     def _refresh(self) -> None:
         count = len(self.items)
-        self.btn_process.config(
-            state="normal" if count else "disabled",
-            text=f"Process {count} file{'s' if count != 1 else ''}",
-        )
+        done = sum(1 for item in self.items if item.report is not None)
+        if not count:
+            self.btn_process.config(state="disabled", text="Process files")
+        elif done == count:
+            self.btn_process.config(state="normal", text="Process again")
+        else:
+            waiting = count - done
+            self.btn_process.config(
+                state="normal",
+                text=f"Process {waiting} file{'s' if waiting != 1 else ''}",
+            )
 
     # -- work -------------------------------------------------------------
 
@@ -396,6 +428,10 @@ class App:
             )
             for item in self.items
         ]
+
+        for item in self.items:
+            if item.state is not None:
+                item.state.config(text="waiting", fg=MUTED)
 
         self.cancel_flag.clear()
         self.btn_add.config(state="disabled")
@@ -468,6 +504,25 @@ class App:
             item.row.destroy()
         self.items.clear()
         self.empty_hint.pack()
+        self._refresh()
+
+        by_path = {r.source: r for r in results}
+        for item in self.items:
+            report = by_path.get(item.path)
+            if report is None:
+                continue
+            item.report = report if report.ok else None
+            if item.state is None:
+                continue
+            if report.ok:
+                bits = [f"{report.pages}p"]
+                if report.images_saved:
+                    bits.append(f"{report.images_saved} img")
+                if report.tables_found:
+                    bits.append(f"{report.tables_found} tbl")
+                item.state.config(text=", ".join(bits), fg=GOOD)
+            else:
+                item.state.config(text="failed", fg=BAD)
         self._refresh()
 
         unread = sum(r.scanned_pages for r in good if r.needs_ocr)

@@ -104,6 +104,10 @@ class Settings:
     write_manifest: bool = True
     output_dir: Path | None = None  # None: a folder beside the source PDF
 
+    # Remove the previous run's output before writing. Only files TSP itself
+    # creates are touched, so pointing output at a shared folder stays safe.
+    clean_target: bool = True
+
     # Tables. Detection costs about four times the text-extraction time, so it
     # stays off unless asked for. Markdown grids cost no more tokens than the
     # reading-order text they replace.
@@ -462,6 +466,8 @@ def process_pdf(
             return result
 
         target.mkdir(parents=True, exist_ok=True)
+        if settings.clean_target:
+            _clear_previous(target, source.stem)
         result.text_path = target / f"{source.stem}.txt"
         width = max(3, len(str(page_count)))
         flags = pymupdf.TEXTFLAGS_TEXT
@@ -629,6 +635,24 @@ def process_pdf(
                 doc.close()
             except Exception:
                 pass
+
+
+def _clear_previous(target: Path, stem: str) -> None:
+    """Delete what an earlier run wrote, and nothing else.
+
+    Reprocessing at a higher threshold renders fewer pages, so last run's
+    images would otherwise linger and end up in the output.
+    """
+    for name in (f"{stem}.txt", "MANIFEST.txt"):
+        try:
+            (target / name).unlink(missing_ok=True)
+        except OSError:
+            pass
+    for image in target.glob("p[0-9]*.png"):
+        try:
+            image.unlink()
+        except OSError:
+            pass
 
 
 def _header(source: Path, doc, settings: Settings, page_count: int) -> str:

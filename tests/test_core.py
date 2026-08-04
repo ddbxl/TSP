@@ -370,3 +370,92 @@ def test_ocr_request_without_tesseract_warns_and_continues(
     assert result.ok
     assert result.ocr_pages == 0
     assert any("Tesseract was not found" in w for w in result.warnings)
+
+
+# -- reprocessing --------------------------------------------------------
+
+
+def test_rerun_at_a_higher_threshold_clears_old_images(sample: Path, tmp_path: Path):
+    """Rendering fewer pages the second time must not leave the first run's
+    images behind."""
+    first = process_pdf(sample, Settings(image_threshold=0.05, output_dir=tmp_path))
+    assert first.images_saved > 0
+    folder = first.text_path.parent
+
+    second = process_pdf(
+        sample,
+        Settings(image_threshold=1.01, render_visual_pages=False, output_dir=tmp_path),
+    )
+    assert second.images_saved == 0
+    assert list(folder.glob("*.png")) == []
+
+
+def test_clearing_leaves_unrelated_files_alone(sample: Path, tmp_path: Path):
+    result = process_pdf(sample, Settings(output_dir=tmp_path))
+    bystander = result.text_path.parent / "notes.md"
+    bystander.write_text("keep me", encoding="utf-8")
+
+    process_pdf(sample, Settings(output_dir=tmp_path))
+    assert bystander.read_text(encoding="utf-8") == "keep me"
+
+
+def test_clean_target_can_be_switched_off(sample: Path, tmp_path: Path):
+    process_pdf(sample, Settings(image_threshold=0.05, output_dir=tmp_path))
+    folder = tmp_path / f"{sample.stem}_TSP"
+    before = len(list(folder.glob("*.png")))
+    process_pdf(
+        sample,
+        Settings(
+            image_threshold=1.01,
+            render_visual_pages=False,
+            clean_target=False,
+            output_dir=tmp_path,
+        ),
+    )
+    assert len(list(folder.glob("*.png"))) == before
+
+
+# -- the browser build ---------------------------------------------------
+
+
+WEB = Path(__file__).resolve().parent.parent / "web"
+
+
+def test_bridge_is_valid_python():
+    """web/bridge.py runs inside Pyodide. It used to live in a JavaScript
+    template literal, where an escape sequence was rewritten before Python saw
+    it. Parsing the real file is what catches that."""
+    import ast
+
+    ast.parse((WEB / "bridge.py").read_text(encoding="utf-8"))
+
+
+def test_no_python_hides_inside_a_javascript_string():
+    """A template literal processes backslash escapes, so Python embedded in one
+    arrives corrupted. Keep the Python in .py files."""
+    import re
+
+    for script in WEB.glob("*.js"):
+        source = script.read_text(encoding="utf-8")
+        for literal in re.findall(r"`([^`]*)`", source):
+            looks_like_python = (
+                "def " in literal and ":" in literal and "import " in literal
+            )
+            assert not looks_like_python, (
+                f"{script.name} embeds Python in a template literal; "
+                f"put it in a .py file instead"
+            )
+
+
+def test_bridge_only_imports_what_pyodide_provides():
+    import ast
+
+    tree = ast.parse((WEB / "bridge.py").read_text(encoding="utf-8"))
+    allowed = {"io", "json", "zipfile", "shutil", "pathlib", "tsp"}
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            found.add(node.module.split(".")[0])
+    assert not found - allowed, f"unexpected imports: {sorted(found - allowed)}"

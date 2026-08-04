@@ -17,12 +17,29 @@ Versions follow [Semantic Versioning](https://semver.org).
 - A Web Worker owns the Python runtime in the browser, so the page keeps
   repainting, progress arrives per page, and Cancel works.
 - A progress bar and a Cancel button in the browser build.
+- Finished files stay in the queue. Change a mode, a Tables box or the image
+  quality and that file queues again; with nothing queued the button reads
+  Process again. The browser keeps hold of the files, so nothing is re-picked.
+- A failure panel that leads with a plain sentence, guesses the cause, keeps the
+  trace collapsed and offers a prefilled issue on the repository.
 - Copy text and Download text in the browser, so the common case needs neither
   a zip nor unpacking. The zip stays for page images and batches.
 - The folder picker opens in Documents and remembers where it was last used.
 
 ### Fixed
 
+- The browser engine would not start. The bridge Python sat inside a JavaScript
+  template literal, which rewrote `\n` into a real newline and broke a string
+  literal. The bridge is now `web/bridge.py`, a real file the worker fetches, so
+  nothing rewrites it on the way in. Three checks guard the class of bug: the
+  file must parse, no Python may hide in a template literal, and the workflow
+  compiles both Python files before deploying.
+- Reprocessing a document left the previous run's page images behind, in the
+  browser and on disk. Both clear what the last run wrote, and on disk only
+  files TSP itself creates are removed.
+- The token meter added each run to the last, so processing one file twice
+  counted it twice. Totals are derived from the queue now.
+- Removing a processed file from the browser queue left its output in the zip.
 - The results panel appeared before anything had been processed. Its
   `display: flex` rule outweighed the `hidden` attribute.
 - Saving to a folder failed silently when Chrome refused the folder. Chrome

@@ -116,6 +116,10 @@ that identically to a cancelled dialogue, so the page cannot tell the two apart.
 It opens the picker in Documents for that reason and says so if nothing gets
 saved.
 
+Finished files stay in the queue. Change a setting on one and it queues again;
+change nothing and the button offers Process again. Neither needs the file
+re-picked.
+
 [docs/BROWSER.md](docs/BROWSER.md) covers the version pinning rule, browser
 support, measured timings and the test results.
 
