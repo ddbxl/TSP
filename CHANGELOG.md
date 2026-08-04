@@ -17,11 +17,17 @@ Versions follow [Semantic Versioning](https://semver.org).
 - A Web Worker owns the Python runtime in the browser, so the page keeps
   repainting, progress arrives per page, and Cancel works.
 - A progress bar and a Cancel button in the browser build.
+- Copy text and Download text in the browser, so the common case needs neither
+  a zip nor unpacking. The zip stays for page images and batches.
+- The folder picker opens in Documents and remembers where it was last used.
 
 ### Fixed
 
 - The results panel appeared before anything had been processed. Its
   `display: flex` rule outweighed the `hidden` attribute.
+- Saving to a folder failed silently when Chrome refused the folder. Chrome
+  reports a refused folder identically to a cancelled dialogue, so the page now
+  explains the likely cause instead of saying nothing.
 - The Pages workflow copied web files by name and would have shipped a site
   without `worker.js`. It now copies the file and fails the build if any web
   file is missing from the artifact.

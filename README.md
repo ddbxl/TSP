@@ -102,6 +102,20 @@ That stages the engine, serves `web/` and opens the page. First load pulls about
 28 MB, which the browser then caches. A 100-page report takes about 2.3 seconds
 in the browser against 1.0 second on the desktop.
 
+Four ways to take the result away, in the order the page offers them:
+
+| | Good for |
+|---|---|
+| **Copy text** | Pasting straight into a chat. No file, no unpacking. |
+| **Download text** | One `.txt`, every document joined. Works everywhere. |
+| **Save every file to a folder** | Text, manifests and page images onto disk. Chrome, Edge and Opera. |
+| **Download as a zip** | The same, on browsers without folder access. |
+
+Chrome refuses to write to certain folders, Downloads among them, and reports
+that identically to a cancelled dialogue, so the page cannot tell the two apart.
+It opens the picker in Documents for that reason and says so if nothing gets
+saved.
+
 [docs/BROWSER.md](docs/BROWSER.md) covers the version pinning rule, browser
 support, measured timings and the test results.
 
