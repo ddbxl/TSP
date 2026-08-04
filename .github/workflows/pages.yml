@@ -1,0 +1,70 @@
+name: Deploy browser build to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "src/tsp/core.py"
+      - "assets/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp web/index.html web/style.css web/app.js _site/
+          cp assets/icon.svg assets/favicon.png _site/
+          # One engine serves both targets: src/tsp/core.py.
+          cp src/tsp/core.py _site/tsp_core.py
+          cp LICENSE _site/LICENSE.txt
+
+      - name: Check the engine imports nothing unavailable in Pyodide
+        run: |
+          python - <<'PY'
+          import ast, sys
+          tree = ast.parse(open("src/tsp/core.py").read())
+          allowed = {
+              "os", "re", "unicodedata", "collections", "dataclasses",
+              "pathlib", "typing", "pymupdf", "fitz", "__future__",
+          }
+          found = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  found.update(a.name.split(".")[0] for a in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                  found.add(node.module.split(".")[0])
+          extra = found - allowed
+          if extra:
+              sys.exit(f"core.py imports {sorted(extra)}; confirm Pyodide support first")
+          print("engine imports look portable:", sorted(found))
+          PY
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
