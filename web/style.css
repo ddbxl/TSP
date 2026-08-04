@@ -23,6 +23,10 @@
 
 * { box-sizing: border-box; }
 
+/* The hidden attribute loses to any author `display` declaration, so state it
+   again with enough weight to win. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   padding: 0 var(--step) 5rem;
