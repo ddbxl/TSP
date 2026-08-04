@@ -14,8 +14,17 @@ const PYPI_METADATA = "https://pypi.org/pypi/pymupdf/json";
 
 let pyodide = null;
 
+/* Two kinds of message go back to the page. Broadcasts carry no id and are
+   handled by type. Replies echo the id of the request that caused them, so the
+   page can settle the right promise without either side keeping a table of
+   which reply answers which request. */
+
 function say(type, payload = {}) {
   self.postMessage({ type, ...payload });
+}
+
+function reply(id, payload = {}, transfer = []) {
+  self.postMessage({ id, ...payload }, transfer);
 }
 
 async function findWasmWheel() {
@@ -91,12 +100,10 @@ async function boot(coreUrl, bridgeUrl) {
   await pyodide.runPythonAsync(bridge);
 
   const version = pyodide.runPython("import pymupdf; pymupdf.__version__");
-  say("ready", {
-    text: `Ready. PyMuPDF ${version} on Pyodide ${pyodide.version} via ${route}`,
-  });
+  return `Ready. PyMuPDF ${version} on Pyodide ${pyodide.version} via ${route}`;
 }
 
-function process({ name, bytes, threshold, dpi, tables }) {
+function process({ id, name, bytes, threshold, dpi, tables }) {
   pyodide.FS.writeFile(`/work/in/${name}`, new Uint8Array(bytes));
 
   // Reaches Python as a callable, so progress arrives per page rather than
@@ -110,62 +117,65 @@ function process({ name, bytes, threshold, dpi, tables }) {
     tables,
     report
   );
-  say("result", { name, report: JSON.parse(report_json) });
+  reply(id, { name, report: JSON.parse(report_json) });
 }
 
-function deliver() {
+function deliver(id) {
   const names = JSON.parse(pyodide.globals.get("tsp_files")());
   if (!names.length) {
-    say("output", { names: [], bytes: null });
+    reply(id, { names: [], bytes: null });
     return;
   }
   const proxy = pyodide.globals.get("tsp_zip")();
   const bytes = proxy.toJs ? proxy.toJs() : proxy;
   if (proxy.destroy) proxy.destroy();
-  self.postMessage({ type: "output", names, bytes }, [bytes.buffer]);
+  reply(id, { names, bytes }, [bytes.buffer]);
 }
 
-function readOne(path) {
+function readOne(id, path) {
   const proxy = pyodide.globals.get("tsp_read")(path);
   const bytes = proxy.toJs ? proxy.toJs() : proxy;
   if (proxy.destroy) proxy.destroy();
-  self.postMessage({ type: "file", path, bytes }, [bytes.buffer]);
+  reply(id, { path, bytes }, [bytes.buffer]);
 }
 
 self.onmessage = async (event) => {
   const message = event.data;
+  const { id, type } = message;
   try {
-    switch (message.type) {
+    switch (type) {
       case "boot":
-        await boot(message.coreUrl, message.bridgeUrl);
+        reply(id, { text: await boot(message.coreUrl, message.bridgeUrl) });
         break;
       case "process":
         process(message);
         break;
       case "deliver":
-        deliver();
+        deliver(id);
         break;
       case "text":
-        say("text", { text: pyodide.globals.get("tsp_text")() });
+        reply(id, { text: pyodide.globals.get("tsp_text")() });
+        break;
+      case "read":
+        readOne(id, message.path);
         break;
       case "drop":
         pyodide.globals.get("tsp_drop")(message.name);
-        say("dropped", { name: message.name });
-        break;
-      case "read":
-        readOne(message.path);
+        reply(id, { name: message.name });
         break;
       case "clear":
         pyodide.globals.get("tsp_clear")();
-        say("cleared");
+        reply(id, {});
         break;
       default:
-        say("error", { message: `unknown request: ${message.type}` });
+        reply(id, { failed: `unknown request: ${type}` });
     }
   } catch (error) {
-    say("error", {
-      name: message.name,
-      message: String((error && error.message) || error),
-    });
+    const detail = String((error && error.message) || error);
+    if (id === undefined) {
+      say("error", { message: detail });
+    } else {
+      reply(id, { failed: detail });
+    }
   }
 };

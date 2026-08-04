@@ -65,7 +65,8 @@ let booting = null;
 let running = false;
 let queue = [];
 let plainText = "";
-const pending = new Map(); // request type -> resolver
+const pending = new Map(); // request id -> resolver
+let nextId = 1;
 
 /* -- worker plumbing ---------------------------------------------------- */
 
@@ -76,21 +77,27 @@ function spawn() {
     setEngine("failed", "Engine stopped");
     log("");
     showFailure("The engine stopped unexpectedly.", event.message);
+    rejectAll("the engine stopped");
     finishRun();
   };
 }
 
+/* Every request carries an id and the worker echoes it back, so a new request
+   needs no matching entry anywhere in here. Keying replies by name instead is
+   how a reply once went unhandled and left the interface waiting for ever. */
+
 function ask(type, payload = {}) {
+  const id = nextId++;
   return new Promise((resolve, reject) => {
-    pending.set(type, { resolve, reject });
-    worker.postMessage({ type, ...payload });
+    pending.set(id, { resolve, reject, type });
+    worker.postMessage({ id, type, ...payload });
   });
 }
 
-function settle(type, value, failed = false) {
-  const entry = pending.get(type);
+function settle(id, value, failed = false) {
+  const entry = pending.get(id);
   if (!entry) return;
-  pending.delete(type);
+  pending.delete(id);
   if (failed) {
     entry.reject(value);
   } else {
@@ -98,37 +105,34 @@ function settle(type, value, failed = false) {
   }
 }
 
+function rejectAll(reason) {
+  for (const id of [...pending.keys()]) {
+    settle(id, new Error(reason), true);
+  }
+}
+
 function handle(message) {
+  // A reply: settle whichever request produced it.
+  if (message.id !== undefined) {
+    if (message.failed) {
+      settle(message.id, new Error(message.failed), true);
+    } else {
+      settle(message.id, message);
+    }
+    return;
+  }
+
+  // A broadcast.
   switch (message.type) {
     case "status":
       setEngine(message.state, message.text);
       break;
-    case "ready":
-      booted = true;
-      setEngine("ready", message.text);
-      settle("boot", true);
-      refresh();
-      break;
     case "progress":
       showProgress(message.name, message.page, message.pages);
       break;
-    case "result":
-      settle("process", message.report);
-      break;
-    case "output":
-      settle("deliver", message);
-      break;
-    case "file":
-      settle("read", message);
-      break;
-    case "cleared":
-      settle("clear", true);
-      break;
     case "error":
-      log(message.message);
-      for (const type of [...pending.keys()]) {
-        settle(type, new Error(message.message), true);
-      }
+      showFailure("The engine reported a problem.", message.message);
+      rejectAll(message.message);
       break;
   }
 }
@@ -140,6 +144,11 @@ function boot() {
   booting = ask("boot", {
     coreUrl: CORE_URL.href,
     bridgeUrl: BRIDGE_URL.href,
+  }).then((answer) => {
+    booted = true;
+    setEngine("ready", answer.text);
+    refresh();
+    return true;
   }).catch((error) => {
     booting = null;
     setEngine("failed", "Engine failed to start");
@@ -454,13 +463,14 @@ async function run() {
 
     try {
       const bytes = await entry.file.arrayBuffer();
-      const report = await ask("process", {
+      const answer = await ask("process", {
         name: entry.file.name,
         bytes,
         threshold: entry.mode,
         dpi,
         tables: entry.tables,
       });
+      const report = answer.report;
 
       if (report.ok) {
         entry.state = "done";
@@ -521,12 +531,17 @@ async function offerResults(scannedTotal) {
     output.names.length
   } files, ${(blob.size / 1048576).toFixed(1)} MB)`;
 
-  // The text on its own is what most people are after.
+  // Reveal the zip before fetching the text, so a failure in the step below
+  // still leaves a working download.
+  ui.results.hidden = false;
+  ui.saveFolder.hidden = !("showDirectoryPicker" in window);
+
   try {
     const answer = await ask("text");
     plainText = answer.text || "";
-  } catch {
+  } catch (error) {
     plainText = "";
+    log(`Text could not be prepared: ${error.message}`);
   }
 
   if (plainText) {
@@ -552,9 +567,6 @@ async function offerResults(scannedTotal) {
   }
   ui.copy.hidden = !plainText;
   ui.downloadText.hidden = !plainText;
-
-  ui.results.hidden = false;
-  ui.saveFolder.hidden = !("showDirectoryPicker" in window);
   log(`Done. ${output.names.length} files ready.`);
 
   if (scannedTotal) {
@@ -642,7 +654,7 @@ function cancel() {
   // A worker running Python cannot be interrupted politely, so end it and start
   // a fresh one. The runtime is cached, so booting again is quick.
   worker.terminate();
-  pending.clear();
+  rejectAll("cancelled");
   worker = null;
   booted = false;
   booting = null;
