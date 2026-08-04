@@ -9,7 +9,7 @@ all of it when you paste that report into an LLM. TSP strips the repetition,
 rejoins words broken across line breaks, and prints the before and after count
 so you can see what came off.
 
-![The TSP icon](assets/icon.png)
+![TSP](assets/social-preview.png)
 
 ## Install
 
