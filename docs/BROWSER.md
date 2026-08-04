@@ -199,7 +199,8 @@ node web/protocol_check.mjs any.pdf
 ```
 
 It exits non-zero if a request goes unanswered. Set `TSP_WHEEL` to a wheel on
-disk to skip the download.
+disk to skip the download. The `protocol` job in `.github/workflows/test.yml`
+runs the same check on Node 24 for every push.
 
 Requests carry an id and the worker echoes it, so adding one needs no change to
 the page's message handler. Matching replies by name was how a reply once went

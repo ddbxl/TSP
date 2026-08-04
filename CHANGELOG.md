@@ -26,6 +26,14 @@ Versions follow [Semantic Versioning](https://semver.org).
   a zip nor unpacking. The zip stays for page images and batches.
 - The folder picker opens in Documents and remembers where it was last used.
 
+### Changed
+
+- Every GitHub action moved to its current major: checkout v7, setup-python v7,
+  upload-pages-artifact v5, deploy-pages v5. All of them declare Node 24, which
+  clears the Node 20 deprecation warning the older ones raised on each run.
+- Continuous integration runs the message-protocol check on Node 24, so a
+  request the page cannot settle fails the build rather than reaching the site.
+
 ### Fixed
 
 - The browser hung after processing, with no download offered. The page matched
