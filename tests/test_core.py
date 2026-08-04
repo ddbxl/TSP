@@ -23,6 +23,7 @@ from tsp.core import (  # noqa: E402
     clean_text,
     estimate_tokens,
     process_pdf,
+    tesseract_available,
 )
 
 W, H = 595.0, 842.0
@@ -225,3 +226,147 @@ def test_cancellation_stops_early(sample: Path, tmp_path: Path):
         sample, Settings(output_dir=tmp_path), is_cancelled=lambda: True
     )
     assert not result.ok and "cancel" in result.message.lower()
+
+
+# -- tables --------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def table_pdf(tmp_path_factory) -> Path:
+    """A page holding a caption and a six-column indicator table."""
+    path = tmp_path_factory.mktemp("pdfs") / "indicators.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page(width=W, height=H)
+    page.insert_text((60, 50), "Table 4.2  Regional innovation indicators", fontsize=10)
+
+    cols = ["Region", "R&D", "Patents", "SMEs", "Employ.", "Index"]
+    rows = [
+        ("Bratislavsky kraj", "1.82", "412", "18,430", "62.1", "0.71"),
+        ("Zapadne Slovensko", "0.61", "97", "24,118", "58.4", "0.42"),
+        ("Stredne Slovensko", "0.54", "63", "19,802", "55.9", "0.38"),
+        ("Vychodne Slovensko", "0.49", "51", "21,447", "53.2", "0.34"),
+    ]
+    x0, y0, cw, rh = 60, 75, 78, 26
+    for column, name in enumerate(cols):
+        page.draw_rect(
+            pymupdf.Rect(x0 + column * cw, y0, x0 + (column + 1) * cw, y0 + rh),
+            color=(0, 0, 0), width=0.6,
+        )
+        page.insert_text((x0 + column * cw + 4, y0 + 17), name, fontsize=7.5)
+    for row, values in enumerate(rows, start=1):
+        for column, cell in enumerate(values):
+            page.draw_rect(
+                pymupdf.Rect(
+                    x0 + column * cw, y0 + row * rh,
+                    x0 + (column + 1) * cw, y0 + (row + 1) * rh,
+                ),
+                color=(0, 0, 0), width=0.4,
+            )
+            page.insert_text(
+                (x0 + column * cw + 4, y0 + row * rh + 17), cell, fontsize=7.5
+            )
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def test_tables_off_by_default(table_pdf: Path, tmp_path: Path):
+    result = process_pdf(table_pdf, Settings(output_dir=tmp_path))
+    assert result.tables_found == 0
+    assert "|Region|" not in result.text_path.read_text(encoding="utf-8")
+
+
+def test_tables_become_markdown_grids(table_pdf: Path, tmp_path: Path):
+    result = process_pdf(
+        table_pdf, Settings(extract_tables=True, output_dir=tmp_path)
+    )
+    text = result.text_path.read_text(encoding="utf-8")
+    assert result.tables_found == 1
+    assert "|Region|" in text
+    assert "|---|" in text
+    assert "|Bratislavsky kraj|1.82|412|18,430|62.1|0.71|" in text
+
+
+def test_table_contents_appear_once(table_pdf: Path, tmp_path: Path):
+    """Blocks inside a table are dropped in favour of the grid, so a cell must
+    not appear both as loose text and inside the grid."""
+    result = process_pdf(
+        table_pdf, Settings(extract_tables=True, output_dir=tmp_path)
+    )
+    text = result.text_path.read_text(encoding="utf-8")
+    assert text.count("Bratislavsky kraj") == 1
+
+
+def test_caption_outside_the_table_survives(table_pdf: Path, tmp_path: Path):
+    result = process_pdf(
+        table_pdf, Settings(extract_tables=True, output_dir=tmp_path)
+    )
+    assert "Table 4.2" in result.text_path.read_text(encoding="utf-8")
+
+
+def test_markdown_grids_cost_about_the_same(table_pdf: Path, tmp_path: Path):
+    """Grids replace the reading-order text rather than adding to it, so the
+    token count should stay within a few per cent."""
+    plain = process_pdf(table_pdf, Settings(output_dir=tmp_path / "a"))
+    grids = process_pdf(
+        table_pdf, Settings(extract_tables=True, output_dir=tmp_path / "b")
+    )
+    assert grids.tokens_out < plain.tokens_out * 1.15
+
+
+def test_find_tables_notice_does_not_reach_stdout(table_pdf, tmp_path, capsys):
+    process_pdf(table_pdf, Settings(extract_tables=True, output_dir=tmp_path))
+    assert "pymupdf_layout" not in capsys.readouterr().out
+
+
+# -- scanned pages -------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def scanned_pdf(sample: Path, tmp_path_factory) -> Path:
+    """Pages rendered to images, so no text layer survives."""
+    path = tmp_path_factory.mktemp("pdfs") / "scan.pdf"
+    source = pymupdf.open(sample)
+    out = pymupdf.open()
+    for index in range(3):
+        pix = source.load_page(index).get_pixmap(matrix=pymupdf.Matrix(2, 2))
+        page = out.new_page(width=W, height=H)
+        page.insert_image(pymupdf.Rect(0, 0, W, H), stream=pix.tobytes("png"))
+    out.save(path)
+    out.close()
+    source.close()
+    return path
+
+
+def test_scanned_pages_detected(scanned_pdf: Path, tmp_path: Path):
+    result = process_pdf(scanned_pdf, Settings(output_dir=tmp_path))
+    assert result.scanned_pages == 3
+    assert result.needs_ocr
+    assert any("no text layer" in w for w in result.warnings)
+
+
+def test_normal_pages_are_not_flagged_as_scans(sample: Path, tmp_path: Path):
+    result = process_pdf(sample, Settings(output_dir=tmp_path))
+    assert result.scanned_pages == 0
+    assert not result.needs_ocr
+
+
+def test_ocr_reads_a_scan_when_tesseract_is_present(
+    scanned_pdf: Path, tmp_path: Path
+):
+    if not tesseract_available():
+        pytest.skip("Tesseract not installed")
+    result = process_pdf(scanned_pdf, Settings(ocr=True, output_dir=tmp_path))
+    assert result.ocr_pages == 3
+    assert not result.needs_ocr
+    assert "Smart Specialisation" in result.text_path.read_text(encoding="utf-8")
+
+
+def test_ocr_request_without_tesseract_warns_and_continues(
+    scanned_pdf: Path, tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr("tsp.core.tesseract_available", lambda: False)
+    result = process_pdf(scanned_pdf, Settings(ocr=True, output_dir=tmp_path))
+    assert result.ok
+    assert result.ocr_pages == 0
+    assert any("Tesseract was not found" in w for w in result.warnings)

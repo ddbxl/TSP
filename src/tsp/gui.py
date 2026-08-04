@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from .core import MODES, Result, Settings, process_pdf
+from .core import MODES, Result, Settings, process_pdf, tesseract_available
 
 APP_NAME = "TSP - Token Saving Protocol"
 
@@ -58,6 +58,7 @@ def resolve_fonts() -> None:
 class QueueItem:
     path: Path
     mode: tk.StringVar
+    tables: tk.BooleanVar
     row: tk.Frame
 
 
@@ -162,6 +163,24 @@ class App:
             cursor="hand2",
         )
         self.btn_clear.pack(side="left", padx=(8, 0))
+
+        self.ocr_var = tk.BooleanVar(value=False)
+        self.ocr_ready = tesseract_available()
+        ocr_box = tk.Checkbutton(
+            toolbar,
+            text="Read scans (OCR)" if self.ocr_ready else "Read scans (needs Tesseract)",
+            variable=self.ocr_var,
+            state="normal" if self.ocr_ready else "disabled",
+            bg=PAPER,
+            fg=MUTED if self.ocr_ready else "#a8b0bb",
+            font=FONT_SMALL,
+            activebackground=PAPER,
+            selectcolor=PAPER,
+            relief="flat",
+            highlightthickness=0,
+            cursor="hand2" if self.ocr_ready else "arrow",
+        )
+        ocr_box.pack(side="left", padx=(14, 0))
 
         self.dpi_var = tk.StringVar(value="144 dpi")
         dpi_box = ttk.Combobox(
@@ -294,10 +313,25 @@ class App:
             textvariable=mode,
             values=list(MODES),
             state="readonly",
-            width=26,
+            width=24,
         ).pack(side="left", padx=6)
 
-        item = QueueItem(path=path, mode=mode, row=container)
+        tables = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            row,
+            text="Tables",
+            variable=tables,
+            bg=CARD,
+            fg=MUTED,
+            font=FONT_SMALL,
+            activebackground=CARD,
+            selectcolor=CARD,
+            relief="flat",
+            highlightthickness=0,
+            cursor="hand2",
+        ).pack(side="left", padx=(2, 0))
+
+        item = QueueItem(path=path, mode=mode, tables=tables, row=container)
         tk.Button(
             row,
             text="Remove",
@@ -356,6 +390,8 @@ class App:
                     image_threshold=MODES[item.mode.get()],
                     render_zoom=dpi / 72.0,
                     render_visual_pages=MODES[item.mode.get()] <= 1.0,
+                    extract_tables=item.tables.get(),
+                    ocr=self.ocr_var.get() and self.ocr_ready,
                 ),
             )
             for item in self.items
@@ -434,10 +470,25 @@ class App:
         self.empty_hint.pack()
         self._refresh()
 
+        unread = sum(r.scanned_pages for r in good if r.needs_ocr)
         summary = (
             f"{len(good)} of {len(results)} files done. "
             f"About {tokens:,} tokens of text, {removed:,} trimmed."
         )
+        if unread:
+            self.status.config(text=summary, fg=WARN)
+            offer = (
+                f"{unread} pages hold an image and no text layer, so they came "
+                f"out empty.\n\n"
+            )
+            if self.ocr_ready:
+                offer += "Tick 'Read scans (OCR)' and run those files again."
+            else:
+                offer += (
+                    "Install Tesseract 5 to read them here, or run OCRmyPDF "
+                    "over the files first:\nhttps://ocrmypdf.readthedocs.io"
+                )
+            messagebox.showwarning("Scanned pages found", offer)
         if bad:
             self.status.config(text=summary, fg=WARN)
             detail = "\n".join(f"{r.source.name}: {r.message}" for r in bad)

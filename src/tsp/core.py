@@ -9,6 +9,8 @@ Licensed under the GNU General Public License v3.0 or later. See LICENSE.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import re
 import unicodedata
@@ -102,6 +104,18 @@ class Settings:
     write_manifest: bool = True
     output_dir: Path | None = None  # None: a folder beside the source PDF
 
+    # Tables. Detection costs about four times the text-extraction time, so it
+    # stays off unless asked for. Markdown grids cost no more tokens than the
+    # reading-order text they replace.
+    extract_tables: bool = False
+
+    # Scanned pages. Detection is cheap and always on; running OCR is not.
+    ocr: bool = False
+    ocr_language: str = "eng"
+    ocr_dpi: int = 200
+    scan_max_chars: int = 24  # a page with no more text than this, and
+    scan_min_coverage: float = 0.8  # this much image, is a scan
+
     @property
     def dpi(self) -> int:
         return round(72 * self.render_zoom)
@@ -114,6 +128,9 @@ class PageStat:
     visual: bool
     blank: bool
     image_name: str | None = None
+    scanned: bool = False
+    ocr: bool = False
+    tables: int = 0
 
 
 @dataclass
@@ -128,6 +145,23 @@ class Result:
     warnings: list[str] = field(default_factory=list)
     ok: bool = True
     message: str = ""
+
+    @property
+    def scanned_pages(self) -> int:
+        return sum(1 for s in self.page_stats if s.scanned)
+
+    @property
+    def ocr_pages(self) -> int:
+        return sum(1 for s in self.page_stats if s.ocr)
+
+    @property
+    def tables_found(self) -> int:
+        return sum(s.tables for s in self.page_stats)
+
+    @property
+    def needs_ocr(self) -> bool:
+        """True when pages look scanned and none of them were read by OCR."""
+        return self.scanned_pages > 0 and self.ocr_pages == 0
 
     @property
     def tokens_in(self) -> int:
@@ -288,6 +322,102 @@ def _is_vector_heavy(page, char_count: int, settings: Settings) -> bool:
 
 
 # --------------------------------------------------------------------------
+# Scanned pages
+# --------------------------------------------------------------------------
+
+
+def tesseract_available() -> bool:
+    """True when PyMuPDF can find Tesseract's language data.
+
+    PyMuPDF reads TESSDATA_PREFIX, so Tesseract 5 and its language files have
+    to be installed separately. Nothing here bundles them.
+    """
+    try:
+        return bool(pymupdf.get_tessdata())
+    except Exception:
+        return False
+
+
+def _looks_scanned(char_count: int, coverage: float, settings: Settings) -> bool:
+    """A page holding an image and almost no text is a scan."""
+    return (
+        char_count <= settings.scan_max_chars
+        and coverage >= settings.scan_min_coverage
+    )
+
+
+def _ocr_page(page, settings: Settings) -> str:
+    """Read a scanned page through Tesseract. Raises if Tesseract is absent."""
+    textpage = page.get_textpage_ocr(
+        language=settings.ocr_language,
+        dpi=settings.ocr_dpi,
+        full=True,
+    )
+    return page.get_text("text", textpage=textpage)
+
+
+# --------------------------------------------------------------------------
+# Tables
+# --------------------------------------------------------------------------
+
+
+def _text_with_tables(page, flags: int) -> tuple[str, int]:
+    """Extract text with detected tables replaced by markdown grids.
+
+    Text blocks falling inside a table's bounds are dropped and the grid takes
+    their place, so a table's contents appear once rather than twice.
+    """
+    try:
+        # find_tables() prints a suggestion to stdout on every call. Swallow it
+        # so a caller's own output stays clean. Single-threaded work only.
+        with contextlib.redirect_stdout(io.StringIO()):
+            tables = page.find_tables().tables
+    except Exception:
+        tables = []
+
+    if not tables:
+        return page.get_text("text", flags=flags, sort=True), 0
+
+    bounds = [pymupdf.Rect(table.bbox) for table in tables]
+    grids: list[str] = []
+    for table in tables:
+        try:
+            grids.append(table.to_markdown())
+        except Exception:
+            grids.append("")
+
+    try:
+        blocks = page.get_text("blocks", flags=flags, sort=True)
+    except Exception:
+        return page.get_text("text", flags=flags, sort=True), 0
+
+    placed: set[int] = set()
+    parts: list[str] = []
+
+    for block in blocks:
+        x0, y0, x1, y1, text = block[0], block[1], block[2], block[3], block[4]
+        if not isinstance(text, str) or not text.strip():
+            continue
+        centre = pymupdf.Point((x0 + x1) / 2, (y0 + y1) / 2)
+        inside = next(
+            (i for i, box in enumerate(bounds) if box.contains(centre)), None
+        )
+        if inside is None:
+            parts.append(text)
+        elif inside not in placed:
+            placed.add(inside)
+            if grids[inside]:
+                parts.append(grids[inside])
+
+    # A table whose blocks were all filtered out still belongs in the output.
+    for index, grid in enumerate(grids):
+        if index not in placed and grid:
+            parts.append(grid)
+
+    return "\n".join(parts), len(tables)
+
+
+# --------------------------------------------------------------------------
 # Main entry point
 # --------------------------------------------------------------------------
 
@@ -342,6 +472,16 @@ def process_pdf(
         # detection so the header keys match the text they are stripped from.
         clean_pages: list[str] = []
         visual_flags: list[bool] = []
+        scan_flags: list[bool] = []
+        ocr_flags: list[bool] = []
+        table_counts: list[int] = []
+        ocr_ready = settings.ocr and tesseract_available()
+        if settings.ocr and not ocr_ready:
+            result.warnings.append(
+                "OCR requested but Tesseract was not found; reading the text "
+                "layer only."
+            )
+
         for index in range(page_count):
             if is_cancelled and is_cancelled():
                 result.ok = False
@@ -350,21 +490,50 @@ def process_pdf(
             if progress:
                 progress(index, page_count)
 
+            tables_here = 0
             try:
                 page = doc.load_page(index)
-                raw = page.get_text("text", flags=flags, sort=True)
+                if settings.extract_tables:
+                    raw, tables_here = _text_with_tables(page, flags)
+                else:
+                    raw = page.get_text("text", flags=flags, sort=True)
             except Exception as exc:  # isolate the page, keep the document
                 result.warnings.append(f"page {index + 1}: {exc}")
                 visual_flags.append(False)
+                scan_flags.append(False)
+                ocr_flags.append(False)
+                table_counts.append(0)
                 clean_pages.append("")
                 continue
 
+            # A page with an image and no text is a scan. Only measure coverage
+            # when the text is thin, so the check costs nothing on normal pages.
+            scanned = False
+            coverage = -1.0
+            if len(raw.strip()) <= settings.scan_max_chars:
+                coverage = _raster_coverage(page, settings)
+                scanned = _looks_scanned(len(raw.strip()), coverage, settings)
+
+            did_ocr = False
+            if scanned and ocr_ready:
+                try:
+                    ocr_text = _ocr_page(page, settings)
+                    if ocr_text.strip():
+                        raw = ocr_text
+                        did_ocr = True
+                except Exception as exc:
+                    result.warnings.append(f"page {index + 1} OCR: {exc}")
+
             result.chars_in += len(raw)
             clean_pages.append(clean_text(raw, settings))
+            scan_flags.append(scanned)
+            ocr_flags.append(did_ocr)
+            table_counts.append(tables_here)
 
             visual = False
             if settings.render_visual_pages and settings.image_threshold <= 1.0:
-                coverage = _raster_coverage(page, settings)
+                if coverage < 0.0:  # not measured during the scan check
+                    coverage = _raster_coverage(page, settings)
                 visual = coverage >= settings.image_threshold
                 if not visual:
                     visual = _is_vector_heavy(page, len(raw.strip()), settings)
@@ -418,6 +587,9 @@ def process_pdf(
                     visual=visual,
                     blank=not text,
                     image_name=image_name,
+                    scanned=scan_flags[index],
+                    ocr=ocr_flags[index],
+                    tables=table_counts[index],
                 )
             )
 
@@ -429,10 +601,19 @@ def process_pdf(
         if settings.write_manifest:
             _write_manifest(target / "MANIFEST.txt", result, settings, boilerplate)
 
-        result.message = (
-            f"{page_count} pages, {result.images_saved} images, "
-            f"~{result.tokens_out:,} tokens"
-        )
+        if result.needs_ocr:
+            result.warnings.append(
+                f"{result.scanned_pages} of {page_count} pages hold an image and "
+                f"no text layer. Run OCR to read them."
+            )
+
+        parts = [f"{page_count} pages", f"{result.images_saved} images"]
+        if result.tables_found:
+            parts.append(f"{result.tables_found} tables")
+        if result.ocr_pages:
+            parts.append(f"{result.ocr_pages} pages read by OCR")
+        parts.append(f"~{result.tokens_out:,} tokens")
+        result.message = ", ".join(parts)
         if progress:
             progress(page_count, page_count)
         return result
@@ -480,6 +661,13 @@ def _write_manifest(
         f"estimated tokens: {result.tokens_in:,} -> {result.tokens_out:,}",
         f"reduction: {result.saving:.1%}",
     ]
+    if settings.extract_tables:
+        lines.append(f"tables kept as markdown grids: {result.tables_found}")
+    if result.scanned_pages:
+        lines.append(
+            f"pages with no text layer: {result.scanned_pages}"
+            + (f", read by OCR: {result.ocr_pages}" if result.ocr_pages else "")
+        )
     if boilerplate:
         lines.append("")
         lines.append("running headers and footers removed (# = any number):")

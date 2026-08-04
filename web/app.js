@@ -1,17 +1,14 @@
 /* TSP in the browser.
  *
- * Boots Pyodide, installs PyMuPDF, fetches the engine from this deployment and
- * calls it. All extraction logic lives in src/tsp/core.py, so the browser and
- * the desktop run the same code.
+ * This file draws the interface and talks to web/worker.js, which owns the
+ * Python runtime. Keeping the engine on a worker thread lets the page report
+ * progress per page and cancel a run in flight.
  *
  * Copyright (C) 2026 Daga D.
  * Licensed under the GNU General Public License v3.0 or later.
  */
 
-const PYODIDE_VERSION = "0.29.4"; // verified against the wheel platform below
-const WHEEL_PLATFORM = "pyemscripten_2025_0_wasm32"; // Python 3.13 == Pyodide 0.29.x
-const PYODIDE_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/pyodide.mjs`;
-const PYPI_METADATA = "https://pypi.org/pypi/pymupdf/json";
+const WORKER_URL = new URL("./worker.js", import.meta.url);
 const CORE_URL = new URL("./tsp_core.py", import.meta.url);
 
 const MODES = [
@@ -31,7 +28,11 @@ const ui = {
   queue: el("queue"),
   dpi: el("dpi"),
   run: el("run"),
+  cancel: el("cancel"),
   reset: el("reset"),
+  bar: el("progress"),
+  barFill: el("progress-fill"),
+  barLabel: el("progress-label"),
   keptBar: el("meter-kept"),
   statIn: el("stat-in"),
   statOut: el("stat-out"),
@@ -40,71 +41,100 @@ const ui = {
   results: el("results"),
   download: el("download"),
   saveFolder: el("save-folder"),
+  notice: el("notice"),
   log: el("log"),
 };
 
-let pyodide = null;
+let worker = null;
+let booted = false;
 let booting = null;
+let running = false;
 let queue = [];
-let zipBytes = null;
+const pending = new Map(); // request type -> resolver
 
-/* -- Python glue ------------------------------------------------------- */
+/* -- worker plumbing ---------------------------------------------------- */
 
-const GLUE = `
-import io, json, zipfile
-from pathlib import Path
-from tsp.core import Settings, process_pdf
+function spawn() {
+  worker = new Worker(WORKER_URL);
+  worker.onmessage = (event) => handle(event.data);
+  worker.onerror = (event) => {
+    setEngine("failed", "Engine crashed");
+    log(String(event.message || "worker error"));
+    finishRun();
+  };
+}
 
-WORK = Path("/work")
+function ask(type, payload = {}) {
+  return new Promise((resolve, reject) => {
+    pending.set(type, { resolve, reject });
+    worker.postMessage({ type, ...payload });
+  });
+}
 
-def tsp_process(name, threshold_pct, dpi):
-    pdf = WORK / "in" / name
-    threshold = threshold_pct / 100.0
-    settings = Settings(
-        image_threshold=1.01 if threshold_pct >= 100 else threshold,
-        render_zoom=max(0.25, dpi / 72.0),
-        render_visual_pages=threshold_pct < 100,
-        output_dir=WORK / "out",
-    )
-    result = process_pdf(pdf, settings)
-    return json.dumps({
-        "ok": result.ok,
-        "message": result.message,
-        "pages": result.pages,
-        "images": result.images_saved,
-        "tokens_in": result.tokens_in,
-        "tokens_out": result.tokens_out,
-        "saving": round(result.saving, 4),
-        "warnings": result.warnings[:5],
-        "folder": result.text_path.parent.name if result.text_path else None,
-    })
+function settle(type, value, failed = false) {
+  const entry = pending.get(type);
+  if (!entry) return;
+  pending.delete(type);
+  if (failed) {
+    entry.reject(value);
+  } else {
+    entry.resolve(value);
+  }
+}
 
-def tsp_zip():
-    root = WORK / "out"
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(root.rglob("*")):
-            if path.is_file():
-                archive.write(path, path.relative_to(root).as_posix())
-    return buffer.getvalue()
+function handle(message) {
+  switch (message.type) {
+    case "status":
+      setEngine(message.state, message.text);
+      break;
+    case "ready":
+      booted = true;
+      setEngine("ready", message.text);
+      settle("boot", true);
+      refresh();
+      break;
+    case "progress":
+      showProgress(message.name, message.page, message.pages);
+      break;
+    case "result":
+      settle("process", message.report);
+      break;
+    case "output":
+      settle("deliver", message);
+      break;
+    case "file":
+      settle("read", message);
+      break;
+    case "cleared":
+      settle("clear", true);
+      break;
+    case "error":
+      log(message.message);
+      for (const type of [...pending.keys()]) {
+        settle(type, new Error(message.message), true);
+      }
+      break;
+  }
+}
 
-def tsp_files():
-    root = WORK / "out"
-    return json.dumps([
-        p.relative_to(root).as_posix() for p in sorted(root.rglob("*")) if p.is_file()
-    ])
+function boot() {
+  if (booted) return Promise.resolve(true);
+  if (booting) return booting;
+  if (!worker) spawn();
+  booting = ask("boot", { coreUrl: CORE_URL.href }).catch((error) => {
+    booting = null;
+    setEngine("failed", "Engine failed to start");
+    log(
+      `${error.message}\n\nOpen the console for the full trace. A mismatch ` +
+        `between the pinned Pyodide version and the wheel platform is the ` +
+        `usual cause; see docs/BROWSER.md.`
+    );
+    throw error;
+  });
+  return booting;
+}
 
-def tsp_read(relative):
-    return (WORK / "out" / relative).read_bytes()
-
-def tsp_clear():
-    import shutil
-    for folder in ("in", "out"):
-        target = WORK / folder
-        if target.exists():
-            shutil.rmtree(target)
-        target.mkdir(parents=True, exist_ok=True)
-`;
+/* -- chrome ------------------------------------------------------------- */
 
 function setEngine(state, text) {
   ui.engine.className = `engine engine--${state}`;
@@ -116,119 +146,30 @@ function log(line) {
   ui.log.textContent = line;
 }
 
-/* PyMuPDF publishes a WebAssembly wheel to PyPI under PEP 783. micropip
- * resolves it for this runtime; if that fails, PyPI's JSON API gives the wheel
- * URL directly. Either way the wheel's platform tag must match the running
- * Pyodide. */
-
-async function findWasmWheel() {
-  const meta = await fetch(PYPI_METADATA).then((response) => {
-    if (!response.ok) throw new Error(`PyPI returned ${response.status}`);
-    return response.json();
-  });
-
-  const match = (files) =>
-    (files || []).find((file) => file.filename.includes(WHEEL_PLATFORM));
-
-  const latest = match(meta.urls);
-  if (latest) return latest.url;
-
-  // The newest release may carry no wheel for this platform. Walk back.
-  const versions = Object.keys(meta.releases || {}).reverse();
-  for (const version of versions) {
-    const older = match(meta.releases[version]);
-    if (older) return older.url;
-  }
-  throw new Error(`PyPI has no ${WHEEL_PLATFORM} wheel for pymupdf`);
+function notice(html) {
+  ui.notice.innerHTML = html;
+  ui.notice.hidden = !html;
 }
 
-async function installPyMuPDF() {
-  try {
-    await pyodide.loadPackage("micropip");
-    const micropip = pyodide.pyimport("micropip");
-    await micropip.install("pymupdf");
-    return "micropip";
-  } catch (error) {
-    console.warn("micropip route failed, trying the wheel URL directly", error);
-  }
-  await pyodide.loadPackage(await findWasmWheel());
-  return "direct wheel";
+function showProgress(name, page, pages) {
+  const share = pages ? (page / pages) * 100 : 0;
+  ui.barFill.style.width = `${share}%`;
+  ui.barLabel.textContent = `${name} \u2014 page ${page} of ${pages}`;
 }
 
-async function boot() {
-  if (pyodide) return pyodide;
-  if (booting) return booting;
-
-  booting = (async () => {
-    setEngine("loading", "Downloading Python runtime, about 10 MB");
-    const { loadPyodide } = await import(PYODIDE_URL);
-    pyodide = await loadPyodide({
-      indexURL: `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`,
-    });
-
-    setEngine("loading", "Installing PyMuPDF, about 18 MB");
-    const route = await installPyMuPDF();
-
-    setEngine("loading", "Loading the TSP engine");
-    const source = await fetch(CORE_URL).then((response) => {
-      if (!response.ok) {
-        throw new Error(
-          `tsp_core.py returned ${response.status}. Running locally? ` +
-            `Start with "python web/serve.py", which stages the engine.`
-        );
-      }
-      return response.text();
-    });
-
-    pyodide.FS.mkdirTree("/lib/tsp");
-    pyodide.FS.writeFile("/lib/tsp/__init__.py", "");
-    pyodide.FS.writeFile("/lib/tsp/core.py", source);
-    pyodide.FS.mkdirTree("/work/in");
-    pyodide.FS.mkdirTree("/work/out");
-
-    await pyodide.runPythonAsync(`
-import sys
-sys.path.insert(0, "/lib")
-`);
-    await pyodide.runPythonAsync(GLUE);
-
-    const version = pyodide.runPython("import pymupdf; pymupdf.__version__");
-    setEngine(
-      "ready",
-      `Ready. PyMuPDF ${version} on Pyodide ${pyodide.version} via ${route}`
-    );
-    refresh();
-    return pyodide;
-  })().catch((error) => {
-    booting = null;
-    pyodide = null;
-    setEngine("failed", "Engine failed to start");
-    log(
-      `${error}\n\nOpen the browser console for the full trace. A mismatch ` +
-        `between Pyodide ${PYODIDE_VERSION} and the ${WHEEL_PLATFORM} wheel ` +
-        `is the usual cause; see docs/BROWSER.md.`
-    );
-    throw error;
-  });
-
-  return booting;
-}
-
-/* -- queue ------------------------------------------------------------- */
+/* -- queue -------------------------------------------------------------- */
 
 function addFiles(files) {
-  const known = new Set(queue.map((entry) => `${entry.file.name}:${entry.file.size}`));
+  const known = new Set(queue.map((e) => `${e.file.name}:${e.file.size}`));
   let added = 0;
-
   for (const file of files) {
     if (!/\.pdf$/i.test(file.name)) continue;
     const key = `${file.name}:${file.size}`;
     if (known.has(key)) continue;
     known.add(key);
-    queue.push({ file, mode: MODES[0].value, state: "queued" });
+    queue.push({ file, mode: MODES[0].value, tables: false, state: "queued" });
     added += 1;
   }
-
   if (added) {
     render();
     log(`${queue.length} file${queue.length === 1 ? "" : "s"} ready`);
@@ -258,21 +199,38 @@ function render() {
       option.selected = mode.value === entry.mode;
       select.append(option);
     }
+    select.disabled = running;
     select.addEventListener("change", () => {
       entry.mode = Number(select.value);
     });
+
+    const tables = document.createElement("label");
+    tables.className = "toggle";
+    tables.title =
+      "Keep table structure as markdown grids. Slower, costs about the same tokens.";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = entry.tables;
+    box.disabled = running;
+    box.addEventListener("change", () => {
+      entry.tables = box.checked;
+    });
+    tables.append(box, document.createTextNode("Tables"));
 
     const state = document.createElement("span");
     state.className = "state";
     if (entry.state === "done") {
       state.classList.add("state--done");
-      state.textContent = `${entry.pages}p, ${entry.images} img`;
+      const bits = [`${entry.pages}p`];
+      if (entry.images) bits.push(`${entry.images} img`);
+      if (entry.tableCount) bits.push(`${entry.tableCount} tbl`);
+      state.textContent = bits.join(", ");
     } else if (entry.state === "failed") {
       state.classList.add("state--failed");
       state.textContent = "failed";
     } else if (entry.state === "working") {
       state.textContent = "working";
-    } else {
+    } else if (!running) {
       const remove = document.createElement("button");
       remove.className = "link";
       remove.type = "button";
@@ -280,12 +238,11 @@ function render() {
       remove.addEventListener("click", () => {
         queue.splice(index, 1);
         render();
-        refresh();
       });
       state.append(remove);
     }
 
-    row.append(name, size, select, state);
+    row.append(name, size, select, tables, state);
     ui.queue.append(row);
   });
 
@@ -293,17 +250,17 @@ function render() {
 }
 
 function refresh() {
-  const pending = queue.some((entry) => entry.state === "queued");
-  ui.run.disabled = !pending;
-  ui.run.textContent = pending
-    ? `Process ${queue.filter((e) => e.state === "queued").length} file${
-        queue.filter((e) => e.state === "queued").length === 1 ? "" : "s"
-      }`
+  const waiting = queue.filter((e) => e.state === "queued").length;
+  ui.run.disabled = running || waiting === 0;
+  ui.run.textContent = waiting
+    ? `Process ${waiting} file${waiting === 1 ? "" : "s"}`
     : "Process files";
-  ui.reset.hidden = queue.length === 0;
+  ui.cancel.hidden = !running;
+  ui.reset.hidden = running || queue.length === 0;
+  ui.bar.hidden = !running;
 }
 
-/* -- meter ------------------------------------------------------------- */
+/* -- meter -------------------------------------------------------------- */
 
 const totals = { in: 0, out: 0, images: 0 };
 
@@ -316,12 +273,11 @@ function updateMeter() {
   ui.keptBar.style.width = `${totals.in ? (totals.out / totals.in) * 100 : 0}%`;
 }
 
-/* -- run --------------------------------------------------------------- */
+/* -- run ---------------------------------------------------------------- */
 
 async function run() {
-  ui.run.disabled = true;
   ui.results.hidden = true;
-  zipBytes = null;
+  notice("");
 
   try {
     await boot();
@@ -329,30 +285,37 @@ async function run() {
     return;
   }
 
-  const dpi = Number(ui.dpi.value);
-  const pending = queue.filter((entry) => entry.state === "queued");
+  running = true;
+  render();
 
-  for (const entry of pending) {
+  const dpi = Number(ui.dpi.value);
+  let scannedTotal = 0;
+
+  for (const entry of queue.filter((e) => e.state === "queued")) {
+    if (!running) break;
     entry.state = "working";
     render();
-    log(`Reading ${entry.file.name}`);
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    showProgress(entry.file.name, 0, 1);
 
     try {
-      const bytes = new Uint8Array(await entry.file.arrayBuffer());
-      pyodide.FS.writeFile(`/work/in/${entry.file.name}`, bytes);
-
-      const report = JSON.parse(
-        pyodide.globals.get("tsp_process")(entry.file.name, entry.mode, dpi)
-      );
+      const bytes = await entry.file.arrayBuffer();
+      const report = await ask("process", {
+        name: entry.file.name,
+        bytes,
+        threshold: entry.mode,
+        dpi,
+        tables: entry.tables,
+      });
 
       if (report.ok) {
         entry.state = "done";
         entry.pages = report.pages;
         entry.images = report.images;
+        entry.tableCount = report.tables;
         totals.in += report.tokens_in;
         totals.out += report.tokens_out;
         totals.images += report.images;
+        if (report.needs_ocr) scannedTotal += report.scanned;
         updateMeter();
         log(`${entry.file.name}: ${report.message}`);
       } else {
@@ -361,46 +324,65 @@ async function run() {
       }
     } catch (error) {
       entry.state = "failed";
-      log(`${entry.file.name}: ${error}`);
+      log(`${entry.file.name}: ${error.message}`);
     }
     render();
   }
 
-  await offerResults();
+  if (running) await offerResults(scannedTotal);
+  finishRun();
 }
 
-async function offerResults() {
-  const names = JSON.parse(pyodide.globals.get("tsp_files")());
-  if (!names.length) {
+function finishRun() {
+  running = false;
+  ui.barFill.style.width = "0%";
+  render();
+}
+
+async function offerResults(scannedTotal) {
+  let output;
+  try {
+    output = await ask("deliver");
+  } catch (error) {
+    log(error.message);
+    return;
+  }
+  if (!output.names.length) {
     log("Nothing produced.");
     return;
   }
 
-  const proxy = pyodide.globals.get("tsp_zip")();
-  zipBytes = proxy.toJs ? proxy.toJs() : proxy;
-  if (proxy.destroy) proxy.destroy();
-
-  const blob = new Blob([zipBytes], { type: "application/zip" });
+  const blob = new Blob([output.bytes], { type: "application/zip" });
   if (ui.download.dataset.url) URL.revokeObjectURL(ui.download.dataset.url);
   const url = URL.createObjectURL(blob);
   ui.download.href = url;
   ui.download.dataset.url = url;
-  ui.download.textContent = `Download ${names.length} file${
-    names.length === 1 ? "" : "s"
+  ui.download.textContent = `Download ${output.names.length} file${
+    output.names.length === 1 ? "" : "s"
   } (${(blob.size / 1048576).toFixed(1)} MB)`;
 
   ui.results.hidden = false;
   ui.saveFolder.hidden = !("showDirectoryPicker" in window);
-  log(`Done. ${names.length} files ready.`);
+  log(`Done. ${output.names.length} files ready.`);
+
+  if (scannedTotal) {
+    notice(
+      `<strong>${scannedTotal} pages hold an image and no text layer</strong>, ` +
+        `so they came out empty. Reading them needs OCR, which this page cannot ` +
+        `do. Run <a href="https://ocrmypdf.readthedocs.io" target="_blank" ` +
+        `rel="noopener">OCRmyPDF</a> over the file first, or use the desktop ` +
+        `build with Tesseract installed.`
+    );
+  }
 }
 
 async function saveToFolder() {
   if (!("showDirectoryPicker" in window)) return;
   try {
     const root = await window.showDirectoryPicker({ mode: "readwrite" });
-    const names = JSON.parse(pyodide.globals.get("tsp_files")());
-
-    for (const name of names) {
+    const output = await ask("deliver");
+    for (const name of output.names) {
+      const answer = await ask("read", { path: name });
       const parts = name.split("/");
       let folder = root;
       for (const part of parts.slice(0, -1)) {
@@ -408,34 +390,54 @@ async function saveToFolder() {
       }
       const handle = await folder.getFileHandle(parts.at(-1), { create: true });
       const writable = await handle.createWritable();
-      const proxy = pyodide.globals.get("tsp_read")(name);
-      const data = proxy.toJs ? proxy.toJs() : proxy;
-      if (proxy.destroy) proxy.destroy();
-      await writable.write(data);
+      await writable.write(answer.bytes);
       await writable.close();
     }
-    log(`Saved ${names.length} files to ${root.name}.`);
+    log(`Saved ${output.names.length} files to ${root.name}.`);
   } catch (error) {
     if (error && error.name !== "AbortError") log(`Could not save: ${error}`);
   }
 }
 
+/* -- cancel ------------------------------------------------------------- */
+
+function cancel() {
+  if (!running) return;
+  running = false;
+
+  // A worker running Python cannot be interrupted politely, so end it and start
+  // a fresh one. The runtime is cached, so booting again is quick.
+  worker.terminate();
+  pending.clear();
+  worker = null;
+  booted = false;
+  booting = null;
+
+  for (const entry of queue) {
+    if (entry.state === "working") entry.state = "queued";
+  }
+  finishRun();
+  log("Cancelled. Restarting the engine.");
+  setEngine("loading", "Restarting");
+  boot().catch(() => {});
+}
+
 function resetAll() {
   queue = [];
   totals.in = totals.out = totals.images = 0;
-  zipBytes = null;
   ui.results.hidden = true;
+  notice("");
   if (ui.download.dataset.url) {
     URL.revokeObjectURL(ui.download.dataset.url);
     delete ui.download.dataset.url;
   }
-  if (pyodide) pyodide.globals.get("tsp_clear")();
+  if (booted) ask("clear").catch(() => {});
   updateMeter();
   render();
   log("");
 }
 
-/* -- wiring ------------------------------------------------------------ */
+/* -- wiring ------------------------------------------------------------- */
 
 ui.boot.addEventListener("click", () => boot().catch(() => {}));
 ui.drop.addEventListener("click", () => ui.picker.click());
@@ -463,8 +465,10 @@ ui.drop.addEventListener("drop", (event) => {
   addFiles(event.dataTransfer.files);
 });
 ui.run.addEventListener("click", () => run());
+ui.cancel.addEventListener("click", cancel);
 ui.reset.addEventListener("click", resetAll);
 ui.saveFolder.addEventListener("click", saveToFolder);
 
 setEngine("waiting", "Engine idle, 28 MB to download on first use");
 updateMeter();
+render();

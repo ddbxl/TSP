@@ -248,6 +248,62 @@ select {
 
 :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 
+/* -- progress ---------------------------------------------------------- */
+
+.progress { margin-top: 1.1rem; }
+
+.progress__track {
+  height: 4px;
+  border-radius: 2px;
+  background: #e6e9ee;
+  overflow: hidden;
+}
+.progress__fill {
+  height: 100%;
+  background: var(--teal);
+  transition: width 0.15s linear;
+}
+.progress__label {
+  margin: 0.5rem 0 0;
+  font: 0.78rem var(--mono);
+  color: var(--muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress__fill { transition: none; }
+}
+
+/* -- per-row toggle ---------------------------------------------------- */
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+.toggle input { accent-color: var(--teal); cursor: pointer; margin: 0; }
+.toggle input:disabled { cursor: default; }
+
+/* -- notice ------------------------------------------------------------ */
+
+.notice {
+  margin: 1.1rem 0 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid #e7d8b4;
+  border-left: 3px solid var(--amber);
+  border-radius: 6px;
+  background: #fdf9f0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #6b5420;
+}
+.notice a { color: var(--amber); }
+
+.link--stop { color: var(--red); }
+
 /* -- meter: the signature element -------------------------------------- */
 
 .meter__bar {

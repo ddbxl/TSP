@@ -55,8 +55,16 @@
       </label>
       <div class="actions">
         <button id="run" class="button" type="button" disabled>Process files</button>
+        <button id="cancel" class="link link--stop" type="button" hidden>Cancel</button>
         <button id="reset" class="link" type="button" hidden>Clear</button>
       </div>
+    </div>
+
+    <div id="progress" class="progress" hidden aria-live="polite">
+      <div class="progress__track">
+        <div class="progress__fill" id="progress-fill" style="width:0%"></div>
+      </div>
+      <p class="progress__label" id="progress-label"></p>
     </div>
   </section>
 
@@ -78,6 +86,8 @@
         rather than billing.
       </p>
     </div>
+
+    <p id="notice" class="notice" hidden></p>
 
     <div id="results" class="results" hidden>
       <a id="download" class="button button--quiet" download="tsp_output.zip">

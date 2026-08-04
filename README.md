@@ -122,15 +122,49 @@ pyinstaller packaging/tsp.spec
 `dist/TSP/` holds the result, about 40 MB. The spec excludes numpy, pandas and
 lxml, which PyMuPDF imports when present and TSP does not use.
 
+## Scanned pages
+
+TSP spots a page holding an image and no text layer, counts them, and says so
+rather than handing you an empty file.
+
+Reading them needs OCR. On the desktop, tick **Read scans (OCR)** or pass
+`--ocr`, which uses Tesseract through PyMuPDF at roughly 1.4 seconds a page.
+Tesseract 5 and its language data install separately; TSP bundles neither.
+
+The browser cannot OCR, so it points you at
+[OCRmyPDF](https://ocrmypdf.readthedocs.io) instead.
+
+## Tables
+
+Off by default. Tick **Tables** on a file, or pass `--tables`, and detected
+tables come out as markdown grids:
+
+```
+|Region|R&D|Patents|SMEs|Employ.|Index|
+|---|---|---|---|---|---|
+|Bratislavsky kraj|1.82|412|18,430|62.1|0.71|
+```
+
+Text blocks inside a table are dropped in favour of the grid, so cells appear
+once rather than twice. Measured on a six-column indicator table, a grid costs
+231 tokens against 224 for the same content in reading order, so about 3% more.
+
+The cost is time. Detection made a 100-page report go from 1.4 to 4.3 seconds,
+which is why it stays off unless asked for.
+
+Reading order already handles simple grids. Reach for this when cells are empty,
+wrap onto two lines, or sit under merged headers, because reading order then
+misaligns columns without saying so.
+
 ## Limits
 
-- No OCR. A scanned PDF without a text layer gives you page images and empty
-  text. Run [OCRmyPDF](https://ocrmypdf.readthedocs.io) over it first.
-- Token figures estimate at four characters per token. Compare with them, do
-  not bill from them.
-- Tables lose their column structure. TSP extracts text in reading order.
-- The browser build works on the main thread, so a long PDF freezes the
-  tab. 100 pages takes about 2.3 seconds.
+- Token figures estimate at four characters per token, which is the rule of
+  thumb for English prose. No single true count exists, since every model
+  tokenises differently. The figure runs low on tables and numbers, so treat it
+  as a before-and-after ratio rather than a total.
+- OCR needs Tesseract installed separately, and never runs in the browser.
+- Very large documents in the browser hold the PDF, its text and every rendered
+  page in memory at once. Mobile browsers will give up sooner than desktop.
 
 ## Develop
 

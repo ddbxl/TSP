@@ -191,21 +191,35 @@ an 8.6 MB PDF, its text and 29 pixmaps at once without trouble.
 1. A very large document. A 200 MB scan at 300 dpi may still exhaust the tab.
 2. The zip download on Safari, where Blob handling differs.
 
+## The worker
+
+`web/worker.js` owns the Python runtime. The page posts file bytes in and
+receives progress and output back, so nothing heavy touches the thread that
+draws the interface.
+
+Progress arrives per page. The engine's existing `progress` callback is handed a
+JavaScript function, which posts a message the page turns into a bar. A
+100-page document produced 101 monotonic progress events in testing.
+
+Cancel terminates the worker outright. A worker running synchronous Python
+cannot be interrupted politely: Pyodide's interrupt buffer needs
+`SharedArrayBuffer`, which needs COOP and COEP headers, which Pages cannot set.
+Terminating is immediate and certain, and booting again takes a few seconds
+because the runtime is already cached. Files that were mid-flight return to the
+queue.
+
+Output crosses back as a transferable `ArrayBuffer`, so a 13 MB zip moves
+without being copied.
+
 ## Known gaps
 
-**Processing blocks the tab.** Python runs on the main thread, so the page
-cannot repaint while a page renders. A batch yields between files and no
-further, which caps the longest block at whichever single document is largest.
+**Memory on long documents.** The runtime holds the PDF, its extracted text and
+every rendered page at once. An 8.6 MB, 308-page report was fine. Mobile
+browsers give up sooner than desktop ones.
 
-In practice this has not been a problem. A run of three documents totalling 409
-pages, the largest 308 pages and 8.6 MB, with 51 pages rendered to PNG, drew no
-complaint about responsiveness. Moving Pyodide into a Web Worker remains the fix
-if a document ever does stall the page, and costs a message-passing layer: the
-worker owns the interpreter, the page posts file bytes in and receives progress
-and output bytes back.
-
-**No cancel button.** Cancellation needs the worker above, since the main
-thread cannot interrupt a running Python call.
+**No OCR.** Tesseract is not in the Pyodide distribution, and Tesseract.js would
+mean another 2 to 15 MB per language plus slower throughput. The page detects
+scanned pages and points at OCRmyPDF instead. The desktop build does OCR.
 
 **Token estimates only.** Four characters per token, the same heuristic as the
 desktop build. Nobody ships a WebAssembly tokeniser small enough to justify
