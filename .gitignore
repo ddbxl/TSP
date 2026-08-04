@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# TSP output folders
+*_TSP/
+
+# PyInstaller
+*.manifest
+*.pyz
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Staged into web/ by serve.py and by the Pages workflow
+web/tsp_core.py
+web/icon.svg
+web/favicon.png
+_site/
