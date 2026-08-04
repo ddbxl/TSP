@@ -4,7 +4,7 @@ The worker runs on a background thread and reports through a queue, so the
 window keeps redrawing while long PDFs process and the Cancel button responds
 straight away.
 
-Copyright (C) 2026 TSP contributors
+Copyright (C) 2026 Daga D.
 Licensed under the GNU General Public License v3.0 or later. See LICENSE.
 """
 

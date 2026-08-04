@@ -3,7 +3,7 @@
 This module holds no user-interface code. Import it from a GUI, a CLI, a
 notebook or a WebAssembly runtime.
 
-Copyright (C) 2026 TSP contributors
+Copyright (C) 2026 Daga D.
 Licensed under the GNU General Public License v3.0 or later. See LICENSE.
 """
 

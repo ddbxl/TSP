@@ -3,7 +3,7 @@
     tsp report.pdf deck.pdf --threshold 20 --dpi 200
     tsp *.pdf --text-only --out ./extracted
 
-Copyright (C) 2026 TSP contributors
+Copyright (C) 2026 Daga D.
 Licensed under the GNU General Public License v3.0 or later. See LICENSE.
 """
 
