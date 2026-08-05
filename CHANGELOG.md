@@ -25,8 +25,10 @@ Versions follow [Semantic Versioning](https://semver.org).
 - Copy text and Download text in the browser, so the common case needs neither
   a zip nor unpacking. The zip stays for page images and batches.
 - Per-document actions on each finished row: copy its text, download its text,
-  and download its own files as a zip when it produced page images. The batch
-  panel keeps the same actions for everything at once.
+  and download its own files as a zip when it produced page images.
+- The batch actions sit directly under the documents rather than below the token
+  meter, and read "all" so they cannot be mistaken for the buttons on the rows
+  above.
 - Downloads are named after the source with a marker in front,
   `optimised_<source>.txt` and `optimised_<source>.zip`, so an optimised copy
   sorts beside its original.

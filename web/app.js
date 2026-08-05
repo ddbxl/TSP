@@ -646,7 +646,7 @@ async function offerResults(scannedTotal) {
   ui.download.download = single
     ? optimisedName(single, "zip")
     : "optimised_documents.zip";
-  ui.download.textContent = `Download everything as a zip (${
+  ui.download.textContent = `Download all files as a zip (${
     output.names.length
   } files, ${humanSize(blob.size)})`;
 
@@ -674,8 +674,8 @@ async function offerResults(scannedTotal) {
     ui.downloadText.download = single
       ? optimisedName(single, "txt")
       : "optimised_documents.txt";
-    ui.downloadText.textContent = `Download text (${humanSize(plainText.length)})`;
-    ui.copy.textContent = `Copy text (~${Math.round(
+    ui.downloadText.textContent = `Download all text (${humanSize(plainText.length)})`;
+    ui.copy.textContent = `Copy all text (~${Math.round(
       plainText.length / 4
     ).toLocaleString()} tokens)`;
   }

@@ -102,8 +102,8 @@ That stages the engine, serves `web/` and opens the page. First load pulls about
 28 MB, which the browser then caches. A 100-page report takes about 2.3 seconds
 in the browser against 1.0 second on the desktop.
 
-Each finished document carries its own actions, and the panel below repeats them
-for the batch:
+Each finished document carries its own actions, with the same actions for
+everything at once directly beneath:
 
 | | Good for |
 |---|---|

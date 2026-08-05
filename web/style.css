@@ -371,9 +371,16 @@ select {
 .meter__note { margin: 1rem 0 0; font-size: 0.8rem; color: var(--muted); }
 
 .results {
-  margin-top: 1.25rem;
-  padding-top: 1.25rem;
+  margin-top: 1.4rem;
+  padding-top: 1.2rem;
   border-top: 1px solid var(--rule);
+}
+
+/* Distinguishes the batch actions from the per-document ones on the rows
+   above, which carry the same verbs. */
+.label--sub {
+  margin: 0 0 0.8rem;
+  font-size: 0.68rem;
 }
 
 .results__row {

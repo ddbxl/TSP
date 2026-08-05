@@ -66,6 +66,34 @@
       </div>
       <p class="progress__label" id="progress-label"></p>
     </div>
+
+    <p id="notice" class="notice" hidden></p>
+
+    <div id="results" class="results" hidden>
+      <h3 class="label label--sub">Everything together</h3>
+      <div class="results__row">
+        <button id="copy" class="button button--quiet" type="button">
+          Copy all text
+        </button>
+        <a id="download-text" class="button button--plain"
+           download="optimised_documents.txt">
+          Download all text
+        </a>
+      </div>
+      <div class="results__row results__row--quiet">
+        <a id="download" class="link" download="optimised_documents.zip">
+          Download all files as a zip
+        </a>
+        <button id="save-folder" class="link" type="button" hidden>
+          Save all to a folder
+        </button>
+      </div>
+      <p id="folder-hint" class="hint" hidden>
+        Nothing saved. Chrome refuses to write to some folders, Downloads
+        among them, and reports that the same way as a cancelled dialogue.
+        Documents and Desktop both work.
+      </p>
+    </div>
   </section>
 
   <section class="panel" aria-labelledby="meter-heading">
@@ -87,31 +115,6 @@
       </p>
     </div>
 
-    <p id="notice" class="notice" hidden></p>
-
-    <div id="results" class="results" hidden>
-      <div class="results__row">
-        <button id="copy" class="button button--quiet" type="button">
-          Copy text
-        </button>
-        <a id="download-text" class="button button--plain" download="tsp.txt">
-          Download text
-        </a>
-      </div>
-      <div class="results__row results__row--quiet">
-        <button id="save-folder" class="link" type="button" hidden>
-          Save every file to a folder
-        </button>
-        <a id="download" class="link" download="tsp_output.zip">
-          Download everything as a zip
-        </a>
-      </div>
-      <p id="folder-hint" class="hint" hidden>
-        Nothing saved. Chrome refuses to write to some folders, Downloads
-        among them, and reports that the same way as a cancelled dialogue.
-        Documents and Desktop both work.
-      </p>
-    </div>
 
     <p id="log" class="log" role="status" aria-live="polite"></p>
 
