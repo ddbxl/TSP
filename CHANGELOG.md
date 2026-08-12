@@ -36,6 +36,14 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Changed
 
+- Output is markdown, `<name>.md` rather than `<name>.txt`, so tables render
+  wherever the file is opened. The markup stays minimal: nothing is invented
+  where a PDF cannot say what it meant.
+- The browser engine loads as the page opens instead of waiting for a button.
+  It runs on a worker thread, so the download costs the interface nothing. A
+  connection the browser reports as metered or very slow still waits, and
+  choosing a file starts it either way.
+
 - Every GitHub action moved to its current major: checkout v7, setup-python v7,
   upload-pages-artifact v5, deploy-pages v5. All of them declare Node 24, which
   clears the Node 20 deprecation warning the older ones raised on each run.
@@ -44,6 +52,11 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- A markdown grid touching prose or a page marker was read as a paragraph of
+  pipes rather than a table, which hit every table opening a page or sitting
+  under a caption. Grids are padded with a blank line on each side and page
+  markers stand alone. A test runs the output through a markdown parser and
+  counts the header cells.
 - The browser hung after processing, with no download offered. The page matched
   replies to requests by name and had no entry for two of them, so a request
   waited for ever and everything after it stalled. Requests now carry an id the

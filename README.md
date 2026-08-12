@@ -65,10 +65,16 @@ instead.
 ```
 report.pdf
 report_TSP/
-├── report.txt        text, page markers as --- p.4 ---
+├── report.md         the text, page markers as --- p.4 ---
 ├── MANIFEST.txt      what got removed, and the token estimate
 └── p007.png          only for pages above the threshold
 ```
+
+Markdown, so a table renders as a table wherever the file is opened, and an LLM
+reads the columns rather than a run of pipes. The markup stays minimal: a heading
+for the filename, grids where tables were found, and nothing invented. Headings
+and emphasis inside a PDF cannot be recovered reliably, and guessing at them
+would cost tokens for structure that might be wrong.
 
 `MANIFEST.txt` lists the headers and footers TSP dropped, so you can check its
 judgement rather than trust it.
@@ -108,14 +114,18 @@ everything at once directly beneath:
 | | Good for |
 |---|---|
 | **Copy text** | Pasting straight into a chat. No file, no unpacking. |
-| **Download text** | One `.txt`. Per document, or every document joined. |
+| **Download text** | One `.md`. Per document, or every document joined. |
 | **Download files** | That document's text, manifest and page images as a zip. |
 | **Save every file to a folder** | Everything onto disk. Chrome, Edge and Opera. |
 | **Download everything as a zip** | The same, on browsers without folder access. |
 
 Downloads keep the source name with a marker in front, so
-`S3_Study_Final_Report.pdf` gives `optimised_S3_Study_Final_Report.txt` and sorts
+`S3_Study_Final_Report.pdf` gives `optimised_S3_Study_Final_Report.md` and sorts
 beside its original.
+
+The engine starts loading as the page opens, on a worker thread, so the 28 MB
+arrives while you are choosing files rather than after. On a connection the
+browser reports as metered or very slow it waits, and adding a file starts it.
 
 Chrome refuses to write to certain folders, Downloads among them, and reports
 that identically to a cancelled dialogue, so the page cannot tell the two apart.
