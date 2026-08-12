@@ -59,6 +59,12 @@ def build_parser() -> argparse.ArgumentParser:
         "the processing time and roughly the same tokens",
     )
     parser.add_argument(
+        "--figures",
+        action="store_true",
+        help="render charts drawn in vector paths as images and drop the orphan "
+        "axis labels they leave in the text",
+    )
+    parser.add_argument(
         "--ocr",
         action="store_true",
         help="read pages that hold an image and no text layer. Needs Tesseract "
@@ -103,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         drop_page_numbers=not args.keep_headers,
         normalise_punctuation=not args.raw_punctuation,
         extract_tables=args.tables,
+        chart_regions=args.figures,
         ocr=args.ocr,
         ocr_language=args.ocr_lang,
         output_dir=args.out,

@@ -83,7 +83,7 @@ console.log("boot ->", boot.text.replace(/via.*/, "via <route>"));
 
 const proc = await ask("process", {
   name: "sample.pdf", bytes: new Uint8Array(readFileSync(PDF)),
-  threshold: 5, dpi: 144, tables: false,
+  threshold: 5, dpi: 144, tables: false, figures: false,
 });
 console.log("process ->", proc.report.message);
 

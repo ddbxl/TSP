@@ -126,6 +126,22 @@ class Settings:
     # of the two shapes apart: real tables measured 0 to 33% thin columns in a
     # Commission country report, boxes and charts 50 to 100%.
     table_max_thin_columns: float = 0.5
+
+    # A chart drawn in vector paths carries no text layer worth reading: its
+    # axis labels arrive as orphan numbers with nothing to attach them to. TSP
+    # renders the area it occupies and drops the rubble inside it.
+    # Off by default. Replacing text with an image reference loses the data for
+    # anyone who pastes the markdown without carrying the images along, and a
+    # chart cannot be told from a sparse table by any measure of its text:
+    # measured on a Commission report, both run 1.4 to 2.0 words a line. With
+    # tables on, a grid the table gate recovered wins over an image.
+    chart_regions: bool = False
+    chart_min_area: float = 0.04  # share of the page the drawings cover
+    chart_min_paths: int = 3
+    # Axis labels and a legend sit outside the drawn area, so the region grows
+    # before its text is judged and before it is rendered.
+    chart_margin: float = 18.0
+    chart_max_words_per_line: float = 4.0  # above this the region holds prose
     table_max_mean_cell: int = 120  # cells hold values, not paragraphs
     table_max_cell: int = 600  # one cell this long is a paragraph
 
@@ -438,6 +454,153 @@ def _looks_like_a_table(rows, settings: Settings) -> bool:
     return thin / width < settings.table_max_thin_columns
 
 
+# --------------------------------------------------------------------------
+# Charts drawn in vector paths
+# --------------------------------------------------------------------------
+
+REGION_CELL = 10.0  # points, the grain at which drawings are grouped
+
+
+def _drawing_boxes(page, drawings) -> list:
+    """Every drawn line, rectangle and curve as a rectangle clipped to the page."""
+    rect = page.rect
+    boxes = []
+    for drawing in drawings:
+        try:
+            box = pymupdf.Rect(drawing["rect"]) & rect
+        except Exception:
+            continue
+        if not box.is_empty:
+            boxes.append(box)
+    return boxes
+
+
+def _drawn_regions(page, boxes) -> list:
+    """Group drawings into the areas of the page they occupy.
+
+    Cells of a coarse grid covered by any drawing are joined where they touch,
+    so a chart's axes, bars and gridlines come back as one area while a header
+    rule stays its own.
+    """
+    rect = page.rect
+    if rect.is_empty or not boxes:
+        return []
+
+    columns = max(1, int(rect.width / REGION_CELL))
+    rows = max(1, int(rect.height / REGION_CELL))
+    filled: set[tuple[int, int]] = set()
+    for box in boxes:
+        x0 = max(0, int((box.x0 - rect.x0) / REGION_CELL))
+        x1 = min(columns - 1, int((box.x1 - rect.x0) / REGION_CELL))
+        y0 = max(0, int((box.y0 - rect.y0) / REGION_CELL))
+        y1 = min(rows - 1, int((box.y1 - rect.y0) / REGION_CELL))
+        for row in range(y0, y1 + 1):
+            for column in range(x0, x1 + 1):
+                filled.add((row, column))
+
+    regions = []
+    seen: set[tuple[int, int]] = set()
+    for cell in filled:
+        if cell in seen:
+            continue
+        stack = [cell]
+        seen.add(cell)
+        group = []
+        while stack:
+            row, column = stack.pop()
+            group.append((row, column))
+            for dr in (-1, 0, 1):
+                for dc in (-1, 0, 1):
+                    neighbour = (row + dr, column + dc)
+                    if neighbour in filled and neighbour not in seen:
+                        seen.add(neighbour)
+                        stack.append(neighbour)
+        top = min(r for r, _ in group)
+        bottom = max(r for r, _ in group)
+        left = min(c for _, c in group)
+        right = max(c for _, c in group)
+        regions.append(
+            pymupdf.Rect(
+                rect.x0 + left * REGION_CELL,
+                rect.y0 + top * REGION_CELL,
+                rect.x0 + (right + 1) * REGION_CELL,
+                rect.y0 + (bottom + 1) * REGION_CELL,
+            )
+            & rect
+        )
+    return regions
+
+
+def _words_per_line(text: str) -> float:
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    if not lines:
+        return 0.0
+    return sum(len(line.split()) for line in lines) / len(lines)
+
+
+def _lines_inside(region, blocks) -> list[str]:
+    """Text lines whose block sits inside a region."""
+    lines: list[str] = []
+    for block in blocks:
+        if not isinstance(block[4], str):
+            continue
+        middle = pymupdf.Point((block[0] + block[2]) / 2, (block[1] + block[3]) / 2)
+        if region.contains(middle):
+            lines.extend(line.strip() for line in block[4].split("\n") if line.strip())
+    return lines
+
+
+def _chart_regions(page, boxes, blocks, keep_as_text, settings: Settings) -> list:
+    """Pick out the drawn areas whose text is worth replacing with a picture.
+
+    A chart's labels arrive as orphan fragments: measured on a Commission
+    report, 1.5 to 4 words a line against 9 to 12 inside a bordered box of
+    prose. Prose stays. Areas a table gate already recovered stay too, since a
+    grid beats a picture.
+    """
+    page_area = page.rect.get_area()
+    if page_area <= 0:
+        return []
+
+    charts = []
+    for drawn in _drawn_regions(page, boxes):
+        region = (drawn + (
+            -settings.chart_margin,
+            -settings.chart_margin,
+            settings.chart_margin,
+            settings.chart_margin,
+        )) & page.rect
+        share = region.get_area() / page_area
+        if share < settings.chart_min_area or share > 0.98:
+            continue
+        paths = sum(
+            1 for box in boxes if region.contains(box.tl) or region.contains(box.br)
+        )
+        if paths < settings.chart_min_paths:
+            continue
+        if any(region.intersects(other) for other in keep_as_text):
+            continue
+
+        lines = _lines_inside(region, blocks)
+        if not lines:
+            continue
+        words = sum(len(line.split()) for line in lines) / len(lines)
+        if words > settings.chart_max_words_per_line:
+            continue  # sentences, so leave them be
+
+        charts.append(region)
+
+    merged: list = []
+    for region in sorted(charts, key=lambda r: -r.get_area()):
+        for index, existing in enumerate(merged):
+            if existing.intersects(region):
+                merged[index] = existing | region
+                break
+        else:
+            merged.append(region)
+    return merged
+
+
 def _fenced(grid: str) -> str:
     """Pad a markdown grid with blank lines.
 
@@ -447,9 +610,9 @@ def _fenced(grid: str) -> str:
     return f"\n{grid.strip()}\n"
 
 
-def _text_with_tables(
-    page, flags: int, lines: int, settings: Settings
-) -> tuple[str, int, int]:
+def _assemble_page(
+    page, flags: int, lines: int, boxes, settings: Settings, label: str
+) -> tuple[str, int, int, list]:
     """Extract text with detected tables replaced by markdown grids.
 
     Text blocks falling inside a table's bounds are dropped and the grid takes
@@ -458,19 +621,20 @@ def _text_with_tables(
     Pages carrying fewer ruling lines than a table needs skip detection, which
     costs about 24 ms a page and rises with the amount of prose on it.
     """
-    if lines < settings.table_min_lines:
-        return page.get_text("text", flags=flags, sort=True), 0, 0
+    want_tables = settings.extract_tables and lines >= settings.table_min_lines
+    want_charts = settings.chart_regions and bool(boxes)
+    if not want_tables and not want_charts:
+        return page.get_text("text", flags=flags, sort=True), 0, 0, []
 
-    try:
-        # find_tables() prints a suggestion to stdout on every call. Swallow it
-        # so a caller's own output stays clean. Single-threaded work only.
-        with contextlib.redirect_stdout(io.StringIO()):
-            tables = page.find_tables().tables
-    except Exception:
-        tables = []
-
-    if not tables:
-        return page.get_text("text", flags=flags, sort=True), 0, 0
+    tables = []
+    if want_tables:
+        try:
+            # find_tables() prints a suggestion to stdout on every call. Swallow
+            # it so a caller's own output stays clean. Single-threaded only.
+            with contextlib.redirect_stdout(io.StringIO()):
+                tables = page.find_tables().tables
+        except Exception:
+            tables = []
 
     rejected = 0
     bounds: list = []
@@ -495,15 +659,21 @@ def _text_with_tables(
         bounds.append(pymupdf.Rect(table.bbox))
         kept += 1
 
-    if not grids:
-        return page.get_text("text", flags=flags, sort=True), 0, rejected
+
 
     try:
         blocks = page.get_text("blocks", flags=flags, sort=True)
     except Exception:
-        return page.get_text("text", flags=flags, sort=True), 0, rejected
+        return page.get_text("text", flags=flags, sort=True), 0, rejected, []
+
+    figures = (
+        _chart_regions(page, boxes, blocks, bounds, settings) if want_charts else []
+    )
+    if not grids and not figures:
+        return page.get_text("text", flags=flags, sort=True), 0, rejected, []
 
     placed: set[int] = set()
+    shown: set[int] = set()
     parts: list[str] = []
 
     for block in blocks:
@@ -511,6 +681,19 @@ def _text_with_tables(
         if not isinstance(text, str) or not text.strip():
             continue
         centre = pymupdf.Point((x0 + x1) / 2, (y0 + y1) / 2)
+
+        figure = next(
+            (i for i, area in enumerate(figures) if area.contains(centre)), None
+        )
+        if figure is not None:
+            if _words_per_line(text) > settings.chart_max_words_per_line:
+                parts.append(text)  # a caption or a sentence, not a label
+                continue
+            if figure not in shown:
+                shown.add(figure)
+                parts.append(f"\n[figure: {label}_f{figure + 1}.png]\n")
+            continue  # the picture stands in for these labels
+
         inside = next(
             (i for i, box in enumerate(bounds) if box.contains(centre)), None
         )
@@ -525,8 +708,11 @@ def _text_with_tables(
     for index, grid in enumerate(grids):
         if index not in placed and grid:
             parts.append(_fenced(grid))
+    for index in range(len(figures)):
+        if index not in shown:
+            parts.append(f"\n[figure: {label}_f{index + 1}.png]\n")
 
-    return "\n".join(parts), kept, rejected
+    return "\n".join(parts), kept, rejected, figures
 
 
 # --------------------------------------------------------------------------
@@ -596,6 +782,7 @@ def process_pdf(
         ocr_flags: list[bool] = []
         table_counts: list[int] = []
         rejected_counts: list[int] = []
+        figure_rects: list[list] = []
         ocr_ready = settings.ocr and tesseract_available()
         if settings.ocr and not ocr_ready:
             result.warnings.append(
@@ -619,12 +806,27 @@ def process_pdf(
                     drawings = page.get_cdrawings()
                 except Exception:
                     drawings = []
-                if settings.extract_tables:
-                    raw, tables_here, rejected_here = _text_with_tables(
-                        page, flags, _line_like(drawings), settings
-                    )
-                else:
-                    raw = page.get_text("text", flags=flags, sort=True)
+                width_now = max(3, len(str(page_count)))
+                # A page rendered whole needs no figure markers, and deciding
+                # that here stops a marker naming a file nobody writes.
+                coverage = -1.0
+                whole_page = False
+                if settings.render_visual_pages and settings.image_threshold <= 1.0:
+                    coverage = _raster_coverage(page, settings)
+                    whole_page = coverage >= settings.image_threshold
+                boxes = (
+                    _drawing_boxes(page, drawings)
+                    if settings.chart_regions and not whole_page
+                    else []
+                )
+                raw, tables_here, rejected_here, figures_here = _assemble_page(
+                    page,
+                    flags,
+                    _line_like(drawings),
+                    boxes,
+                    settings,
+                    f"p{index + 1:0{width_now}d}",
+                )
             except Exception as exc:  # isolate the page, keep the document
                 result.warnings.append(f"page {index + 1}: {exc}")
                 visual_flags.append(False)
@@ -632,15 +834,16 @@ def process_pdf(
                 ocr_flags.append(False)
                 table_counts.append(0)
                 rejected_counts.append(0)
+                figure_rects.append([])
                 clean_pages.append("")
                 continue
 
             # A page with an image and no text is a scan. Only measure coverage
             # when the text is thin, so the check costs nothing on normal pages.
             scanned = False
-            coverage = -1.0
             if len(raw.strip()) <= settings.scan_max_chars:
-                coverage = _raster_coverage(page, settings)
+                if coverage < 0.0:
+                    coverage = _raster_coverage(page, settings)
                 scanned = _looks_scanned(len(raw.strip()), coverage, settings)
 
             did_ocr = False
@@ -665,16 +868,16 @@ def process_pdf(
             ocr_flags.append(did_ocr)
             table_counts.append(tables_here)
             rejected_counts.append(rejected_here)
+            figure_rects.append(figures_here)
 
-            visual = False
-            if settings.render_visual_pages and settings.image_threshold <= 1.0:
-                if coverage < 0.0:  # not measured during the scan check
-                    coverage = _raster_coverage(page, settings)
-                visual = coverage >= settings.image_threshold
-                if not visual:
-                    visual = _is_vector_heavy(
-                        len(drawings), len(raw.strip()), settings
-                    )
+            visual = whole_page
+            if (
+                not visual
+                and not settings.chart_regions
+                and settings.render_visual_pages
+                and settings.image_threshold <= 1.0
+            ):
+                visual = _is_vector_heavy(len(drawings), len(raw.strip()), settings)
             visual_flags.append(visual)
 
         boilerplate = _boilerplate_lines(clean_pages, settings)
@@ -708,6 +911,27 @@ def process_pdf(
                     result.warnings.append(f"page {index + 1} render: {exc}")
                     image_name = None
                     visual = False
+
+            if not visual and figure_rects[index]:
+                for number, area in enumerate(figure_rects[index], start=1):
+                    name = f"p{index + 1:0{width}d}_f{number}.png"
+                    try:
+                        page = doc.load_page(index)
+                        pix = page.get_pixmap(
+                            clip=area,
+                            matrix=pymupdf.Matrix(
+                                settings.render_zoom, settings.render_zoom
+                            ),
+                            colorspace=pymupdf.csRGB,
+                            alpha=False,
+                        )
+                        pix.save(target / name)
+                        pix = None
+                        result.images_saved += 1
+                    except Exception as exc:
+                        result.warnings.append(
+                            f"page {index + 1} figure {number}: {exc}"
+                        )
 
             marker = f"--- p.{index + 1}"
             if image_name:

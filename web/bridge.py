@@ -137,7 +137,7 @@ def tsp_apply_ocr(name, ocr_json):
     })
 
 
-def tsp_process(name, threshold_pct, dpi, tables, report, ocr_json=None):
+def tsp_process(name, threshold_pct, dpi, tables, figures, report, ocr_json=None):
     """Process one PDF. 'report' is a JS callback taking (page, pages).
 
     'ocr_json' maps a page number to text recognised elsewhere.
@@ -155,6 +155,7 @@ def tsp_process(name, threshold_pct, dpi, tables, report, ocr_json=None):
         render_zoom=max(0.25, dpi / 72.0),
         render_visual_pages=threshold_pct < 100,
         extract_tables=bool(tables),
+        chart_regions=bool(figures),
         output_dir=WORK / "out",
     )
     result = process_pdf(

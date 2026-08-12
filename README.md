@@ -195,6 +195,50 @@ grids like `|The Smart|Spec|ialisation|Strategy|`, at four times the cost. Wrong
 tables are worse than none, so TSP leaves it alone. Those tables come through as
 reading-order text, which for a simple layout stays readable.
 
+## Figures
+
+Off by default. Tick **Figures** on a file, or pass `--figures`, and charts drawn
+in vector paths come out as images with a marker where they sat:
+
+```
+Graph 1.2: HICP breakdown 2022-2026
+
+[figure: p004_f1.png]
+```
+
+The reason is that a chart has no text worth reading. Its axis labels arrive as
+orphan numbers with nothing to attach them to:
+
+```
+1.58
+1.44
+1.73
+:
+2.24
+```
+
+An LLM reading those has no idea what they measure and may pin them to the
+nearest heading, which is worse than the chart being absent, because absence is
+visible and this is not.
+
+TSP groups the drawings on a page into the areas they occupy, grows each area to
+take in the axis labels around it, and replaces the label text with a picture.
+Two things survive: the caption, and any block of real sentences. Measured on a
+Commission country report, a chart's labels run 1.5 to 4 words a line against 9
+to 12 inside a bordered box of prose, which is how the two are told apart.
+
+On that 118-page report: 100,444 tokens down to 93,336, 77 charts rendered,
+orphan number lines down from 251 to 115, all 7 tables kept, and every distinct
+caption still present.
+
+### Why it stays off
+
+A chart cannot be told from a sparse table by any measure of its text: both run
+1.4 to 2.0 words a line. So replacing text with a picture can cost you a table
+you would rather have read, and it only pays off if the images travel with the
+markdown. With **Tables** also on, a grid the table gate recovered wins over a
+picture.
+
 ## What comes out
 
 ```

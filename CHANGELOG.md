@@ -2,9 +2,16 @@
 
 Versions follow [Semantic Versioning](https://semver.org).
 
-## 0.2.0
+## 0.3.0
 
 ### Added
+
+- Figures, off by default. Charts drawn in vector paths are rendered as images
+  and the orphan axis labels they leave in the text are dropped. Drawings are
+  grouped into the areas of a page they cover, each area grows to take in the
+  labels around it, and captions and sentences inside it are kept. On a
+  118-page Commission report: 77 charts rendered, orphan number lines down from
+  251 to 115, tokens from 100,444 to 93,336, every caption still present.
 
 - Scanned-page detection. A page holding an image and no text layer is counted
   and reported, in the summary, the manifest and the interface.

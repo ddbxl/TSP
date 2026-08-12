@@ -380,6 +380,7 @@ function addFiles(files) {
       file,
       mode: MODES[0].value,
       tables: false,
+      figures: false,
       state: "queued",
       report: null,
     });
@@ -436,6 +437,20 @@ function render() {
     });
     tables.append(box, document.createTextNode("Tables"));
 
+    const figures = document.createElement("label");
+    figures.className = "toggle";
+    figures.title =
+      "Render charts as images and drop the orphan axis labels they leave behind.";
+    const figureBox = document.createElement("input");
+    figureBox.type = "checkbox";
+    figureBox.checked = entry.figures;
+    figureBox.disabled = running;
+    figureBox.addEventListener("change", () => {
+      entry.figures = figureBox.checked;
+      markStale(entry);
+    });
+    figures.append(figureBox, document.createTextNode("Figures"));
+
     const state = document.createElement("span");
     state.className = "state";
     if (entry.state === "done" && entry.report) {
@@ -464,7 +479,7 @@ function render() {
 
     const main = document.createElement("div");
     main.className = "row__main";
-    main.append(name, size, select, tables, state, remove);
+    main.append(name, size, select, tables, figures, state, remove);
     row.append(main);
 
     if (entry.state === "done" && entry.report) {
@@ -625,6 +640,7 @@ async function run() {
         threshold: entry.mode,
         dpi,
         tables: entry.tables,
+        figures: entry.figures,
       });
       const report = answer.report;
 

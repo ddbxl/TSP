@@ -59,6 +59,7 @@ class QueueItem:
     path: Path
     mode: tk.StringVar
     tables: tk.BooleanVar
+    figures: tk.BooleanVar
     row: tk.Frame
     state: tk.Label | None = None
     report: Result | None = None
@@ -326,6 +327,8 @@ class App:
             anchor="e",
         )
 
+        figures = tk.BooleanVar(value=False)
+
         tk.Checkbutton(
             row,
             text="Tables",
@@ -340,12 +343,28 @@ class App:
             cursor="hand2",
         ).pack(side="left", padx=(2, 0))
 
+        tk.Checkbutton(
+            row,
+            text="Figures",
+            variable=figures,
+            bg=CARD,
+            fg=MUTED,
+            font=FONT_SMALL,
+            activebackground=CARD,
+            selectcolor=CARD,
+            relief="flat",
+            highlightthickness=0,
+            cursor="hand2",
+        ).pack(side="left")
+
         item = QueueItem(
-            path=path, mode=mode, tables=tables, row=container, state=state
+            path=path, mode=mode, tables=tables, figures=figures,
+            row=container, state=state
         )
         state.pack(side="left", padx=(8, 0))
         mode.trace_add("write", lambda *_: self._mark_stale(item))
         tables.trace_add("write", lambda *_: self._mark_stale(item))
+        figures.trace_add("write", lambda *_: self._mark_stale(item))
         tk.Button(
             row,
             text="Remove",
@@ -423,6 +442,7 @@ class App:
                     render_zoom=dpi / 72.0,
                     render_visual_pages=MODES[item.mode.get()] <= 1.0,
                     extract_tables=item.tables.get(),
+                    chart_regions=item.figures.get(),
                     ocr=self.ocr_var.get() and self.ocr_ready,
                 ),
             )

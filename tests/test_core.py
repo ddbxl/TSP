@@ -761,3 +761,103 @@ def test_a_page_cleaner_is_public_for_reuse():
 
     assert prepare_page_text("author-\nities said \u201cyes\u201d") == 'authorities said "yes"'
     assert prepare_page_text("Page 4 of 9\nreal text", ["Page # of #"]) == "real text"
+
+
+# -- charts drawn in vector paths -----------------------------------------
+
+
+@pytest.fixture(scope="module")
+def chart_pdf(tmp_path_factory) -> Path:
+    """A page with a caption, a bar chart drawn in paths, and a paragraph."""
+    path = tmp_path_factory.mktemp("pdfs") / "chart.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page(width=W, height=H)
+    page.insert_text((60, 60), "Graph 2.1: Real GDP growth by component", fontsize=9)
+    for index in range(22):
+        x = 70 + index * 20
+        height = 40 + (index % 9) * 22
+        page.draw_rect(
+            pymupdf.Rect(x, 320 - height, x + 14, 320),
+            color=(0.1, 0.3, 0.7), fill=(0.2, 0.5, 0.9),
+        )
+        page.insert_text((x, 334), f"{index % 9}.{index % 7}", fontsize=6)
+    page.draw_line(pymupdf.Point(60, 320), pymupdf.Point(520, 320), width=0.8)
+    page.insert_textbox(
+        pymupdf.Rect(60, 400, 535, 760),
+        "Growth in the period was driven by domestic demand, with investment "
+        "contributing the larger share of the increase. " * 8,
+        fontsize=10,
+    )
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def test_charts_are_left_alone_by_default(chart_pdf: Path, tmp_path: Path):
+    text = process_pdf(chart_pdf, Settings(output_dir=tmp_path)).text_path.read_text(
+        encoding="utf-8"
+    )
+    assert "[figure:" not in text
+
+
+def test_a_chart_becomes_an_image_when_asked(chart_pdf: Path, tmp_path: Path):
+    result = process_pdf(
+        chart_pdf, Settings(chart_regions=True, output_dir=tmp_path)
+    )
+    text = result.text_path.read_text(encoding="utf-8")
+    assert "[figure:" in text
+    assert list(result.text_path.parent.glob("*_f*.png")), "no region image written"
+
+
+def test_every_figure_marker_names_a_file_that_exists(
+    chart_pdf: Path, tmp_path: Path
+):
+    """A page rendered whole needs no markers, and a marker for a file nobody
+    writes is worse than no marker."""
+    import re
+
+    result = process_pdf(
+        chart_pdf, Settings(chart_regions=True, output_dir=tmp_path)
+    )
+    folder = result.text_path.parent
+    named = re.findall(
+        r"\[figure: (\S+)\]", result.text_path.read_text(encoding="utf-8")
+    )
+    on_disk = {path.name for path in folder.glob("*.png")}
+    assert named, "no markers to check"
+    assert not [name for name in named if name not in on_disk]
+
+
+def test_the_caption_survives_the_figure(chart_pdf: Path, tmp_path: Path):
+    """The caption is the most useful text on a chart, so it must not be
+    swallowed by the region drawn around it."""
+    text = process_pdf(
+        chart_pdf, Settings(chart_regions=True, output_dir=tmp_path)
+    ).text_path.read_text(encoding="utf-8")
+    assert "Graph 2.1: Real GDP growth by component" in text
+
+
+def test_prose_on_the_page_survives_the_figure(chart_pdf: Path, tmp_path: Path):
+    text = process_pdf(
+        chart_pdf, Settings(chart_regions=True, output_dir=tmp_path)
+    ).text_path.read_text(encoding="utf-8")
+    assert "driven by domestic demand" in text
+
+
+def test_orphan_axis_labels_are_dropped(chart_pdf: Path, tmp_path: Path):
+    """The numbers along the axis mean nothing without the chart, and are what
+    the picture stands in for."""
+    plain = process_pdf(chart_pdf, Settings(output_dir=tmp_path / "a"))
+    figured = process_pdf(
+        chart_pdf, Settings(chart_regions=True, output_dir=tmp_path / "b")
+    )
+    assert figured.tokens_out < plain.tokens_out
+
+
+def test_a_bordered_box_of_prose_is_not_turned_into_a_picture(
+    box_pdf: Path, tmp_path: Path
+):
+    result = process_pdf(box_pdf, Settings(chart_regions=True, output_dir=tmp_path))
+    text = result.text_path.read_text(encoding="utf-8")
+    assert "[figure:" not in text
+    assert "Estonia performs above the EU average" in text

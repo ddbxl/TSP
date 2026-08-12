@@ -103,7 +103,7 @@ async function boot(coreUrl, bridgeUrl) {
   return `Ready. PyMuPDF ${version} on Pyodide ${pyodide.version} via ${route}`;
 }
 
-function process({ id, name, bytes, threshold, dpi, tables, ocrText }) {
+function process({ id, name, bytes, threshold, dpi, tables, figures, ocrText }) {
   pyodide.FS.writeFile(`/work/in/${name}`, new Uint8Array(bytes));
 
   // Reaches Python as a callable, so progress arrives per page rather than
@@ -115,6 +115,7 @@ function process({ id, name, bytes, threshold, dpi, tables, ocrText }) {
     threshold,
     dpi,
     tables,
+    figures,
     report,
     ocrText ? JSON.stringify(ocrText) : null
   );
