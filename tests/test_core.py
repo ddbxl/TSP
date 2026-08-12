@@ -590,3 +590,48 @@ def test_the_bridge_reports_which_pages_need_reading():
     assert '"scans"' in source
     assert "stat.scanned and not stat.ocr" in source
     assert "ocr_json" in source, "the bridge must accept recognised text back"
+
+
+# -- the cost of looking for tables --------------------------------------
+
+
+def test_pages_without_ruling_lines_skip_detection(sample: Path, tmp_path: Path):
+    """Detection costs about 24 ms a page and rises with the prose on it, so a
+    page carrying too few lines to hold a ruled table must not pay for it."""
+    calls = []
+    original = pymupdf.Page.find_tables
+
+    def counted(self, *args, **kwargs):
+        calls.append(self.number)
+        return original(self, *args, **kwargs)
+
+    pymupdf.Page.find_tables = counted
+    try:
+        process_pdf(sample, Settings(extract_tables=True, output_dir=tmp_path))
+    finally:
+        pymupdf.Page.find_tables = original
+
+    result = process_pdf(sample, Settings(output_dir=tmp_path / "b"))
+    assert len(calls) < result.pages, "every page paid for detection"
+
+
+def test_the_filter_finds_the_same_tables(table_pdf: Path, tmp_path: Path):
+    filtered = process_pdf(
+        table_pdf, Settings(extract_tables=True, output_dir=tmp_path / "on")
+    )
+    unfiltered = process_pdf(
+        table_pdf,
+        Settings(extract_tables=True, table_min_lines=0, output_dir=tmp_path / "off"),
+    )
+    assert filtered.tables_found == unfiltered.tables_found
+    assert filtered.text_path.read_text(encoding="utf-8") == unfiltered.text_path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_a_ruled_table_clears_the_line_threshold(table_pdf: Path, tmp_path: Path):
+    """The threshold has to sit below what a real ruled table carries."""
+    result = process_pdf(
+        table_pdf, Settings(extract_tables=True, output_dir=tmp_path)
+    )
+    assert result.tables_found == 1

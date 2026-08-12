@@ -143,12 +143,34 @@ TSP drops the text blocks inside a table in favour of the grid, so cells appear
 once rather than twice. Measured on a six-column indicator table, a grid costs
 231 tokens against 224 for the same content in reading order, so about 3% more.
 
-The cost is time. Detection made a 100-page report go from 1.4 to 4.3 seconds,
-which is why it stays off unless asked for.
+The cost is time, and it falls on pages that hold no table at all. Detection
+reads ruling lines, so TSP counts the lines and rectangles on a page first and
+skips the ones carrying fewer than four. On a 120-page report with tables on ten
+pages, that takes the penalty from five times the normal run down to one and a
+half, finding the same ten tables:
+
+| | 120 pages |
+|---|---|
+| Tables off | 1.0 s |
+| Tables on | 1.5 s |
+| Tables on, filter disabled | 5.0 s |
 
 Reading order already handles simple grids. Reach for this when cells are empty,
 wrap onto two lines, or sit under merged headers, because reading order then
 misaligns columns without saying so.
+
+### What it will not find
+
+Only tables drawn as a grid of ruled cells. A table held together by three
+horizontal rules and nothing else, the style most academic and Commission
+reports use, goes undetected: the detector reads lines, and that layout gives it
+almost none.
+
+PyMuPDF offers a text-position strategy that does find those. It also reported a
+table on all 120 pages of the test report, shredding ordinary paragraphs into
+grids like `|The Smart|Spec|ialisation|Strategy|`, at four times the cost. Wrong
+tables are worse than none, so TSP leaves it alone. Those tables come through as
+reading-order text, which for a simple layout stays readable.
 
 ## What comes out
 

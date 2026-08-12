@@ -112,6 +112,10 @@ class Settings:
     # stays off unless asked for. Markdown grids cost no more tokens than the
     # reading-order text they replace.
     extract_tables: bool = False
+    # Table detection reads ruling lines, so a page without enough of them can
+    # hold no table the detector would find. Skipping those pages is where
+    # nearly all of the cost goes.
+    table_min_lines: int = 4
 
     # Scanned pages. Detection is cheap and always on; running OCR is not.
     ocr: bool = False
@@ -313,16 +317,12 @@ def _raster_coverage(page, settings: Settings) -> float:
     return len(cells) / (COVERAGE_GRID * COVERAGE_GRID)
 
 
-def _is_vector_heavy(page, char_count: int, settings: Settings) -> bool:
+def _is_vector_heavy(path_count: int, char_count: int, settings: Settings) -> bool:
     """Catch charts drawn as vector paths, which carry no raster image and
     little text."""
     if char_count > settings.vector_max_chars:
         return False
-    try:
-        paths = page.get_cdrawings()
-    except Exception:
-        return False
-    return len(paths) >= settings.vector_min_paths
+    return path_count >= settings.vector_min_paths
 
 
 # --------------------------------------------------------------------------
@@ -365,6 +365,19 @@ def _ocr_page(page, settings: Settings) -> str:
 # --------------------------------------------------------------------------
 
 
+def _line_like(drawings) -> int:
+    """Count the lines and rectangles on a page.
+
+    A ruled table is made of these. Curves and text belong to logos and charts.
+    """
+    total = 0
+    for drawing in drawings:
+        for item in drawing.get("items", ()):
+            if item and item[0] in ("l", "re"):
+                total += 1
+    return total
+
+
 def _fenced(grid: str) -> str:
     """Pad a markdown grid with blank lines.
 
@@ -374,12 +387,18 @@ def _fenced(grid: str) -> str:
     return f"\n{grid.strip()}\n"
 
 
-def _text_with_tables(page, flags: int) -> tuple[str, int]:
+def _text_with_tables(page, flags: int, lines: int, settings: Settings) -> tuple[str, int]:
     """Extract text with detected tables replaced by markdown grids.
 
     Text blocks falling inside a table's bounds are dropped and the grid takes
     their place, so a table's contents appear once rather than twice.
+
+    Pages carrying fewer ruling lines than a table needs skip detection, which
+    costs about 24 ms a page and rises with the amount of prose on it.
     """
+    if lines < settings.table_min_lines:
+        return page.get_text("text", flags=flags, sort=True), 0
+
     try:
         # find_tables() prints a suggestion to stdout on every call. Swallow it
         # so a caller's own output stays clean. Single-threaded work only.
@@ -514,8 +533,14 @@ def process_pdf(
             tables_here = 0
             try:
                 page = doc.load_page(index)
+                try:
+                    drawings = page.get_cdrawings()
+                except Exception:
+                    drawings = []
                 if settings.extract_tables:
-                    raw, tables_here = _text_with_tables(page, flags)
+                    raw, tables_here = _text_with_tables(
+                        page, flags, _line_like(drawings), settings
+                    )
                 else:
                     raw = page.get_text("text", flags=flags, sort=True)
             except Exception as exc:  # isolate the page, keep the document
@@ -563,7 +588,9 @@ def process_pdf(
                     coverage = _raster_coverage(page, settings)
                 visual = coverage >= settings.image_threshold
                 if not visual:
-                    visual = _is_vector_heavy(page, len(raw.strip()), settings)
+                    visual = _is_vector_heavy(
+                        len(drawings), len(raw.strip()), settings
+                    )
             visual_flags.append(visual)
 
         boilerplate = _boilerplate_lines(clean_pages, settings)

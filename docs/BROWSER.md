@@ -167,6 +167,7 @@ A 100-page report, 7.6 MB, with a full-page figure every tenth page:
 | Writing the PDF into the virtual filesystem | 52 ms |
 | Processing, images rendered at 144 dpi | 2.3 s |
 | Processing, text only | 1.3 s |
+| Processing with table detection, 120 pages | 1.5 s, against 5.0 s unfiltered |
 | The same file under native CPython | 1.0 s |
 | Building the output zip, 88 KB | 17 ms |
 

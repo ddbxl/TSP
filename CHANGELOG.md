@@ -59,6 +59,12 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- Table detection ran on every page, including the ones holding nothing but
+  prose, at about 24 ms each. TSP now counts the lines and rectangles on a page
+  and skips detection below four, which takes a 120-page report with ten tables
+  from 5.0 s to 1.5 s and finds the same ten. One call for a page's drawings now
+  serves both the table filter and the chart check.
+
 - A markdown grid touching prose or a page marker was read as a paragraph of
   pipes rather than a table, which hit every table opening a page or sitting
   under a caption. Grids are padded with a blank line on each side and page
