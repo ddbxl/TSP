@@ -365,6 +365,15 @@ def _ocr_page(page, settings: Settings) -> str:
 # --------------------------------------------------------------------------
 
 
+def _fenced(grid: str) -> str:
+    """Pad a markdown grid with blank lines.
+
+    Without one on each side, a grid touching prose or a page marker is read as
+    a paragraph of pipes rather than a table.
+    """
+    return f"\n{grid.strip()}\n"
+
+
 def _text_with_tables(page, flags: int) -> tuple[str, int]:
     """Extract text with detected tables replaced by markdown grids.
 
@@ -411,12 +420,12 @@ def _text_with_tables(page, flags: int) -> tuple[str, int]:
         elif inside not in placed:
             placed.add(inside)
             if grids[inside]:
-                parts.append(grids[inside])
+                parts.append(_fenced(grids[inside]))
 
     # A table whose blocks were all filtered out still belongs in the output.
     for index, grid in enumerate(grids):
         if index not in placed and grid:
-            parts.append(grid)
+            parts.append(_fenced(grid))
 
     return "\n".join(parts), len(tables)
 
@@ -468,7 +477,7 @@ def process_pdf(
         target.mkdir(parents=True, exist_ok=True)
         if settings.clean_target:
             _clear_previous(target, source.stem)
-        result.text_path = target / f"{source.stem}.txt"
+        result.text_path = target / f"{source.stem}.md"
         width = max(3, len(str(page_count)))
         flags = pymupdf.TEXTFLAGS_TEXT
         if settings.dehyphenate:
@@ -583,7 +592,7 @@ def process_pdf(
                 marker += " | no text"
             marker += " ---"
 
-            chunks.append(marker)
+            chunks.append(marker + "\n")
             if text:
                 chunks.append(text)
             result.page_stats.append(
@@ -643,7 +652,7 @@ def _clear_previous(target: Path, stem: str) -> None:
     Reprocessing at a higher threshold renders fewer pages, so last run's
     images would otherwise linger and end up in the output.
     """
-    for name in (f"{stem}.txt", "MANIFEST.txt"):
+    for name in (f"{stem}.md", f"{stem}.txt", "MANIFEST.txt"):
         try:
             (target / name).unlink(missing_ok=True)
         except OSError:
