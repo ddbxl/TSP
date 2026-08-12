@@ -213,6 +213,7 @@ function setEngine(state, text) {
   ui.engine.className = `engine engine--${state}`;
   ui.engineText.textContent = text;
   ui.boot.hidden = state !== "waiting" && state !== "failed";
+  ui.boot.textContent = state === "failed" ? "Try again" : "Start engine";
 }
 
 function log(line) {
@@ -354,6 +355,8 @@ function addFiles(files) {
   if (added) {
     render();
     log(`${queue.length} file${queue.length === 1 ? "" : "s"} ready`);
+    // Choosing a file is unambiguous intent, so make sure the engine is coming.
+    if (!booted) boot().catch(() => {});
   }
 }
 
@@ -467,8 +470,8 @@ function rowActions(entry) {
     try {
       const answer = await ask("text", { name: entry.file.name });
       saveBlob(
-        new Blob([answer.text], { type: "text/plain;charset=utf-8" }),
-        optimisedName(entry.file.name, "txt")
+        new Blob([answer.text], { type: "text/markdown;charset=utf-8" }),
+        optimisedName(entry.file.name, "md")
       );
     } catch (error) {
       log(`${entry.file.name}: ${error.message}`);
@@ -664,7 +667,7 @@ async function offerResults(scannedTotal) {
   }
 
   if (plainText) {
-    const textBlob = new Blob([plainText], { type: "text/plain;charset=utf-8" });
+    const textBlob = new Blob([plainText], { type: "text/markdown;charset=utf-8" });
     if (ui.downloadText.dataset.url) {
       URL.revokeObjectURL(ui.downloadText.dataset.url);
     }
@@ -672,8 +675,8 @@ async function offerResults(scannedTotal) {
     ui.downloadText.href = textUrl;
     ui.downloadText.dataset.url = textUrl;
     ui.downloadText.download = single
-      ? optimisedName(single, "txt")
-      : "optimised_documents.txt";
+      ? optimisedName(single, "md")
+      : "optimised_documents.md";
     ui.downloadText.textContent = `Download all text (${humanSize(plainText.length)})`;
     ui.copy.textContent = `Copy all text (~${Math.round(
       plainText.length / 4
@@ -819,6 +822,27 @@ ui.reset.addEventListener("click", resetAll);
 ui.saveFolder.addEventListener("click", saveToFolder);
 ui.copy.addEventListener("click", copyText);
 
-setEngine("waiting", "Engine idle, 28 MB to download on first use");
+/* The engine warms itself as soon as the page opens. It lives on a worker
+   thread, so the download and the WebAssembly compile cost the interface
+   nothing, and by the time a file is chosen it is usually ready.
+
+   A metered or very slow connection is the exception: 28 MB uninvited is rude,
+   so there the button stays and adding a file starts it. */
+function metered() {
+  const link = navigator.connection;
+  if (!link) return false;
+  return (
+    link.saveData === true ||
+    ["slow-2g", "2g"].includes(link.effectiveType)
+  );
+}
+
 updateMeter();
 render();
+
+if (metered()) {
+  setEngine("waiting", "Engine idle. 28 MB, so it waits for you on this connection");
+} else {
+  setEngine("waiting", "Starting the engine");
+  boot().catch(() => {});
+}

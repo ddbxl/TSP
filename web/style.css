@@ -109,13 +109,18 @@ h1 {
   background: var(--muted);
   flex: 0 0 auto;
 }
-.engine--loading .engine__dot { background: var(--amber); animation: pulse 1.3s ease-in-out infinite; }
+.engine--waiting .engine__dot,
+.engine--loading .engine__dot {
+  background: var(--amber);
+  animation: pulse 1.3s ease-in-out infinite;
+}
 .engine--ready   .engine__dot { background: var(--teal); }
 .engine--failed  .engine__dot { background: var(--red); }
 .engine--loading, .engine--ready { color: var(--ink); }
 
 @keyframes pulse { 50% { opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) {
+  .engine--waiting .engine__dot,
   .engine--loading .engine__dot { animation: none; }
 }
 

@@ -80,15 +80,14 @@ def tsp_zip(name=None):
     return buffer.getvalue()
 
 def tsp_text(name=None):
-    """Extracted text, joined. One document when named, otherwise all of them.
+    """Extracted markdown, joined. One document when named, otherwise all.
 
-    Manifests are left out: nobody wants those in a paste.
+    Only the .md files, so manifests stay out of a paste.
     """
     parts = []
     for folder in _folders(name):
-        for txt in sorted(folder.glob("*.txt")):
-            if txt.name != "MANIFEST.txt":
-                parts.append(txt.read_text(encoding="utf-8"))
+        for page in sorted(folder.glob("*.md")):
+            parts.append(page.read_text(encoding="utf-8"))
     return "\n\n".join(parts)
 
 def tsp_files(name=None):
