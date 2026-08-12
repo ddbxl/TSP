@@ -735,8 +735,20 @@ let ocrReady = false;
 let ocrEngine = null;
 
 async function startOcr(language) {
-  const { createWorker } = await import(TESSERACT_MODULE);
-  const engine = await createWorker(language, 1, {
+  // The ESM build carries a single default export, so a named import of
+  // createWorker gives undefined. Accept either shape.
+  const loaded = await import(TESSERACT_MODULE);
+  const api =
+    loaded && typeof loaded.createWorker === "function" ? loaded : loaded.default;
+  if (!api || typeof api.createWorker !== "function") {
+    throw new Error(
+      `tesseract.js loaded but exposed no createWorker. Exports seen: ${Object.keys(
+        loaded || {}
+      ).join(", ") || "none"}`
+    );
+  }
+
+  const engine = await api.createWorker(language, 1, {
     workerPath: TESSERACT_WORKER,
     corePath: TESSERACT_CORE_PATH,
     langPath: TESSDATA,

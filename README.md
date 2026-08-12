@@ -159,6 +159,26 @@ Reading order already handles simple grids. Reach for this when cells are empty,
 wrap onto two lines, or sit under merged headers, because reading order then
 misaligns columns without saying so.
 
+### What it turns down
+
+A bordered callout box, the shape Commission documents use for highlights, looks
+like a table to a detector that reads lines. So does a chart's axis labelling.
+Both come out as a grid of prose with half the columns blank.
+
+TSP judges each grid before keeping it. A real table fills its columns down the
+page; a box or a chart leaves most columns blank on most rows. Measured on a
+Commission country report, real tables ran 0 to 33% thin columns and boxes and
+charts 50 to 100%, so a grid with half its columns thin gets turned down, as does
+one whose cells average more than 120 characters or hold a 600-character
+paragraph.
+
+On that 118-page report, 30 grids were detected and 7 kept. Pipe-table lines in
+the output fell from 387 to 90, and `MANIFEST.txt` records how many grids were
+turned down so you can check the judgement.
+
+A rejected grid costs structure, not content: those words still arrive as
+reading-order text.
+
 ### What it will not find
 
 Only tables drawn as a grid of ruled cells. A table held together by three

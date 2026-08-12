@@ -116,6 +116,17 @@ class Settings:
     # hold no table the detector would find. Skipping those pages is where
     # nearly all of the cost goes.
     table_min_lines: int = 4
+    # A bordered callout box looks like a table to a line-reading detector, and
+    # comes out as a grid of prose with empty columns. These reject that shape.
+    # A rejected table still reaches the output as reading-order text, so the
+    # cost of turning one down is structure rather than content.
+    # A real table fills its columns down the page. A box or a chart's axis
+    # labels leave most columns blank on most rows, which is the sharpest signal
+    # of the two shapes apart: real tables measured 0 to 33% thin columns in a
+    # Commission country report, boxes and charts 50 to 100%.
+    table_max_thin_columns: float = 0.5
+    table_max_mean_cell: int = 120  # cells hold values, not paragraphs
+    table_max_cell: int = 600  # one cell this long is a paragraph
 
     # Scanned pages. Detection is cheap and always on; running OCR is not.
     ocr: bool = False
@@ -153,6 +164,7 @@ class Result:
     warnings: list[str] = field(default_factory=list)
     ok: bool = True
     message: str = ""
+    tables_rejected: int = 0
 
     @property
     def scanned_pages(self) -> int:
@@ -378,6 +390,37 @@ def _line_like(drawings) -> int:
     return total
 
 
+def _looks_like_a_table(rows, settings: Settings) -> bool:
+    """Judge whether a detected grid is a table or a bordered box of prose."""
+    if len(rows) < 2:
+        return False
+    if max((len(row) for row in rows), default=0) < 2:
+        return False
+
+    cells = [(cell or "").strip() for row in rows for cell in row]
+    filled = [cell for cell in cells if cell]
+    if not filled:
+        return False  # a grid of nothing
+
+    if sum(len(cell) for cell in filled) / len(filled) > settings.table_max_mean_cell:
+        return False
+    if max(len(cell) for cell in filled) > settings.table_max_cell:
+        return False
+
+    # How many columns carry content on fewer than half the rows?
+    width = max(len(row) for row in rows)
+    thin = 0
+    for column in range(width):
+        carried = sum(
+            1
+            for row in rows
+            if column < len(row) and (row[column] or "").strip()
+        )
+        if carried / len(rows) < 0.5:
+            thin += 1
+    return thin / width < settings.table_max_thin_columns
+
+
 def _fenced(grid: str) -> str:
     """Pad a markdown grid with blank lines.
 
@@ -387,7 +430,9 @@ def _fenced(grid: str) -> str:
     return f"\n{grid.strip()}\n"
 
 
-def _text_with_tables(page, flags: int, lines: int, settings: Settings) -> tuple[str, int]:
+def _text_with_tables(
+    page, flags: int, lines: int, settings: Settings
+) -> tuple[str, int, int]:
     """Extract text with detected tables replaced by markdown grids.
 
     Text blocks falling inside a table's bounds are dropped and the grid takes
@@ -397,7 +442,7 @@ def _text_with_tables(page, flags: int, lines: int, settings: Settings) -> tuple
     costs about 24 ms a page and rises with the amount of prose on it.
     """
     if lines < settings.table_min_lines:
-        return page.get_text("text", flags=flags, sort=True), 0
+        return page.get_text("text", flags=flags, sort=True), 0, 0
 
     try:
         # find_tables() prints a suggestion to stdout on every call. Swallow it
@@ -408,20 +453,38 @@ def _text_with_tables(page, flags: int, lines: int, settings: Settings) -> tuple
         tables = []
 
     if not tables:
-        return page.get_text("text", flags=flags, sort=True), 0
+        return page.get_text("text", flags=flags, sort=True), 0, 0
 
-    bounds = [pymupdf.Rect(table.bbox) for table in tables]
+    rejected = 0
+    bounds: list = []
     grids: list[str] = []
+    kept = 0
     for table in tables:
         try:
-            grids.append(table.to_markdown())
+            rows = table.extract()
         except Exception:
-            grids.append("")
+            rows = []
+        if not _looks_like_a_table(rows, settings):
+            rejected += 1  # a box, a graph or an empty grid: leave the text be
+            continue
+        try:
+            grid = table.to_markdown()
+        except Exception:
+            rejected += 1
+            continue
+        # to_markdown() marks line breaks inside a cell with <br>, which costs
+        # tokens and reads no better than a space.
+        grids.append(grid.replace("<br>", " "))
+        bounds.append(pymupdf.Rect(table.bbox))
+        kept += 1
+
+    if not grids:
+        return page.get_text("text", flags=flags, sort=True), 0, rejected
 
     try:
         blocks = page.get_text("blocks", flags=flags, sort=True)
     except Exception:
-        return page.get_text("text", flags=flags, sort=True), 0
+        return page.get_text("text", flags=flags, sort=True), 0, rejected
 
     placed: set[int] = set()
     parts: list[str] = []
@@ -446,7 +509,7 @@ def _text_with_tables(page, flags: int, lines: int, settings: Settings) -> tuple
         if index not in placed and grid:
             parts.append(_fenced(grid))
 
-    return "\n".join(parts), len(tables)
+    return "\n".join(parts), kept, rejected
 
 
 # --------------------------------------------------------------------------
@@ -515,6 +578,7 @@ def process_pdf(
         scan_flags: list[bool] = []
         ocr_flags: list[bool] = []
         table_counts: list[int] = []
+        rejected_counts: list[int] = []
         ocr_ready = settings.ocr and tesseract_available()
         if settings.ocr and not ocr_ready:
             result.warnings.append(
@@ -531,6 +595,7 @@ def process_pdf(
                 progress(index, page_count)
 
             tables_here = 0
+            rejected_here = 0
             try:
                 page = doc.load_page(index)
                 try:
@@ -538,7 +603,7 @@ def process_pdf(
                 except Exception:
                     drawings = []
                 if settings.extract_tables:
-                    raw, tables_here = _text_with_tables(
+                    raw, tables_here, rejected_here = _text_with_tables(
                         page, flags, _line_like(drawings), settings
                     )
                 else:
@@ -549,6 +614,7 @@ def process_pdf(
                 scan_flags.append(False)
                 ocr_flags.append(False)
                 table_counts.append(0)
+                rejected_counts.append(0)
                 clean_pages.append("")
                 continue
 
@@ -581,6 +647,7 @@ def process_pdf(
             scan_flags.append(scanned)
             ocr_flags.append(did_ocr)
             table_counts.append(tables_here)
+            rejected_counts.append(rejected_here)
 
             visual = False
             if settings.render_visual_pages and settings.image_threshold <= 1.0:
@@ -650,6 +717,7 @@ def process_pdf(
         body = "\n".join(chunks).rstrip() + "\n"
         result.chars_out = sum(s.chars for s in result.page_stats)
         result.pages = page_count
+        result.tables_rejected = sum(rejected_counts)
 
         result.text_path.write_text(body, encoding="utf-8")
         if settings.write_manifest:
@@ -735,6 +803,10 @@ def _write_manifest(
     ]
     if settings.extract_tables:
         lines.append(f"tables kept as markdown grids: {result.tables_found}")
+        if result.tables_rejected:
+            lines.append(
+                f"grids turned down as boxes or charts: {result.tables_rejected}"
+            )
     if result.scanned_pages:
         lines.append(
             f"pages with no text layer: {result.scanned_pages}"

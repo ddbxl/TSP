@@ -635,3 +635,73 @@ def test_a_ruled_table_clears_the_line_threshold(table_pdf: Path, tmp_path: Path
         table_pdf, Settings(extract_tables=True, output_dir=tmp_path)
     )
     assert result.tables_found == 1
+
+
+# -- boxes that look like tables -----------------------------------------
+
+
+@pytest.fixture(scope="module")
+def box_pdf(tmp_path_factory) -> Path:
+    """A bordered callout box holding a paragraph, the shape Commission
+    documents use for highlights. A line-reading detector sees a table."""
+    path = tmp_path_factory.mktemp("pdfs") / "box.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page(width=W, height=H)
+    page.draw_rect(pymupdf.Rect(60, 60, 535, 320), color=(0, 0, 0), width=1.0)
+    page.draw_line(pymupdf.Point(60, 92), pymupdf.Point(535, 92), width=0.6)
+    page.draw_line(pymupdf.Point(60, 200), pymupdf.Point(535, 200), width=0.4)
+    page.draw_line(pymupdf.Point(300, 92), pymupdf.Point(300, 320), width=0.4)
+    page.insert_text((70, 82), "Box 1: UN Sustainable Development Goals", fontsize=11)
+    page.insert_textbox(
+        pymupdf.Rect(70, 100, 525, 310),
+        "Estonia performs above the EU average and is further improving on most "
+        "goals related to sustainability but needs to catch up with the EU "
+        "average on others. " * 4,
+        fontsize=9,
+    )
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def test_a_bordered_box_of_prose_is_not_a_table(box_pdf: Path, tmp_path: Path):
+    result = process_pdf(box_pdf, Settings(extract_tables=True, output_dir=tmp_path))
+    text = result.text_path.read_text(encoding="utf-8")
+    assert result.tables_found == 0
+    assert "|" not in text, "a callout box came through as a grid"
+    assert "Estonia performs above the EU average" in text, "the words went missing"
+
+
+def test_a_turned_down_grid_is_counted(box_pdf: Path, tmp_path: Path):
+    """The manifest should say a grid was judged and rejected, not stay silent."""
+    result = process_pdf(box_pdf, Settings(extract_tables=True, output_dir=tmp_path))
+    if result.tables_rejected:
+        manifest = (result.text_path.parent / "MANIFEST.txt").read_text(
+            encoding="utf-8"
+        )
+        assert "turned down" in manifest
+
+
+def test_a_real_table_still_passes_the_gate(table_pdf: Path, tmp_path: Path):
+    result = process_pdf(
+        table_pdf, Settings(extract_tables=True, output_dir=tmp_path)
+    )
+    assert result.tables_found == 1
+    assert result.tables_rejected == 0
+
+
+def test_line_breaks_inside_a_cell_do_not_become_br_tags(
+    table_pdf: Path, tmp_path: Path
+):
+    result = process_pdf(
+        table_pdf, Settings(extract_tables=True, output_dir=tmp_path)
+    )
+    assert "<br>" not in result.text_path.read_text(encoding="utf-8")
+
+
+def test_the_ocr_module_is_read_from_its_default_export():
+    """tesseract.js ships one default export and no named ones, so a named
+    import of createWorker gives undefined."""
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "loaded.default" in app
+    assert 'import { createWorker }' not in app

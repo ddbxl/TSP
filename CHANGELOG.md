@@ -59,6 +59,16 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- Bordered callout boxes and chart labelling came through as tables, filling the
+  output with grids of prose and empty columns. Each detected grid is now judged
+  on how consistently its columns are filled and how much text its cells hold.
+  On a 118-page Commission report that took 30 detected grids down to 7 kept, and
+  pipe-table lines from 387 to 90. `MANIFEST.txt` records the count turned down.
+- Line breaks inside a cell arrived as `<br>` tags, which cost tokens and read no
+  better than a space.
+- OCR in the browser failed with "createWorker is not a function". The
+  tesseract.js ESM build carries a single default export and no named ones, so
+  a named import gave undefined.
 - Table detection ran on every page, including the ones holding nothing but
   prose, at about 24 ms each. TSP now counts the lines and rectangles on a page
   and skips detection below four, which takes a 120-page report with ten tables
