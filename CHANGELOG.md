@@ -66,6 +66,17 @@ Versions follow [Semantic Versioning](https://semver.org).
   pipe-table lines from 387 to 90. `MANIFEST.txt` records the count turned down.
 - Line breaks inside a cell arrived as `<br>` tags, which cost tokens and read no
   better than a space.
+- OCR in the browser failed with the WebAssembly core pinned to
+  `tesseract.js-core` 6.1.2 while `tesseract.js` 7.0.0 requires 7.x. The version
+  came from npm's latest tag, which lags behind what the wrapper depends on. Both
+  the worker and the core path are left to the library now, since it derives them
+  from its own version and cannot disagree with itself.
+- A failure reported "no detail captured" and nothing else. tesseract.js rejects
+  with plain strings rather than Error objects, so reading `.message` off the
+  rejection gave undefined. Every failure path normalises what it caught, an
+  error handler is passed to the OCR engine so library errors are reachable
+  rather than thrown inside a message callback, and a failed start names the URLs
+  it used.
 - OCR in the browser failed with "createWorker is not a function". The
   tesseract.js ESM build carries a single default export and no named ones, so
   a named import gave undefined.

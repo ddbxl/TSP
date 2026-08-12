@@ -705,3 +705,29 @@ def test_the_ocr_module_is_read_from_its_default_export():
     app = (WEB / "app.js").read_text(encoding="utf-8")
     assert "loaded.default" in app
     assert 'import { createWorker }' not in app
+
+
+def test_failures_are_normalised_before_reporting():
+    """tesseract.js rejects with plain strings, so reading .message off a
+    rejection reported nothing at all."""
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "function describe(error)" in app
+    assert 'typeof error === "string"' in app, "a string rejection must survive"
+    assert "error && error.message" not in app, "a bare .message read remains"
+
+
+def test_the_ocr_asset_versions_are_not_pinned_by_hand():
+    """tesseract.js derives its worker and core URLs from its own version.
+    Pinning the core by hand pointed at a major version it could not use."""
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    # The words appear in a comment explaining why, so look for the option
+    # actually being set.
+    assert "corePath:" not in app, "corePath is the library's to resolve"
+    assert "workerPath:" not in app, "workerPath is the library's to resolve"
+    assert "TESSERACT_CORE" not in app, "no hand-picked core version"
+
+
+def test_an_ocr_failure_names_the_urls_it_used():
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "language data:" in app
+    assert "errorHandler" in app, "library errors would otherwise be unreachable"

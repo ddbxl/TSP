@@ -115,11 +115,12 @@ const REPO = "https://github.com/ddbxl/TSP";
    language data comes from Tesseract's own repository and the page images never
    leave this machine. */
 const TESSERACT = "7.0.0";
-const TESSERACT_CORE = "6.1.2";
 const TESSERACT_MODULE = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT}/dist/tesseract.esm.min.js`;
-const TESSERACT_WORKER = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT}/dist/worker.min.js`;
-const TESSERACT_CORE_PATH = `https://cdn.jsdelivr.net/npm/tesseract.js-core@${TESSERACT_CORE}`;
 const TESSDATA = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main";
+/* workerPath and corePath are left to tesseract.js, which derives them from its
+   own bundled version. Pinning the core by hand pointed at a major version the
+   wrapper could not use, because npm's latest tag for tesseract.js-core lags
+   behind the version tesseract.js depends on. */
 const PYODIDE_PINNED = "0.29.4";
 const WHEEL_PLATFORM = "pyemscripten_2025_0_wasm32";
 
@@ -140,7 +141,7 @@ function spawn() {
   worker.onerror = (event) => {
     setEngine("failed", "Engine stopped");
     log("");
-    showFailure("The engine stopped unexpectedly.", event.message);
+    showFailure("The engine stopped unexpectedly.", describe(event.message || event));
     rejectAll("the engine stopped");
     finishRun();
   };
@@ -217,7 +218,7 @@ function boot() {
     booting = null;
     setEngine("failed", "Engine failed to start");
     log("");
-    showFailure("The engine did not start.", error && error.message);
+    showFailure("The engine did not start.", describe(error));
     throw error;
   });
   return booting;
@@ -238,6 +239,21 @@ function log(line) {
 
 /* Turns whatever went wrong into something a person can act on, keeps the
    trace collapsed, and offers to file it. */
+
+/* A rejected promise can carry anything. tesseract.js rejects with plain
+   strings, which is how a failure reached the report as "no detail captured". */
+function describe(error) {
+  if (error === null || error === undefined) return "";
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.stack || error.message;
+  if (error.message) return String(error.message);
+  if (error.reason) return describe(error.reason);
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
 
 function guessCause(detail) {
   const text = String(detail || "");
@@ -482,7 +498,7 @@ function rowActions(entry) {
       const answer = await ask("text", { name: entry.file.name });
       flash(copy, (await toClipboard(answer.text)) ? "Copied" : "Blocked");
     } catch (error) {
-      log(`${entry.file.name}: ${error.message}`);
+      log(`${entry.file.name}: ${describe(error)}`);
     }
   });
 
@@ -498,7 +514,7 @@ function rowActions(entry) {
         optimisedName(entry.file.name, "md")
       );
     } catch (error) {
-      log(`${entry.file.name}: ${error.message}`);
+      log(`${entry.file.name}: ${describe(error)}`);
     }
   });
 
@@ -518,7 +534,7 @@ function rowActions(entry) {
           optimisedName(entry.file.name, "zip")
         );
       } catch (error) {
-        log(`${entry.file.name}: ${error.message}`);
+        log(`${entry.file.name}: ${describe(error)}`);
       }
     });
     bar.append(files);
@@ -626,7 +642,7 @@ async function run() {
     } catch (error) {
       entry.state = "failed";
       log(`${entry.file.name} could not be read.`);
-      showFailure(`${entry.file.name} could not be read.`, error && error.message);
+      showFailure(`${entry.file.name} could not be read.`, describe(error));
     }
     render();
   }
@@ -646,7 +662,7 @@ async function offerResults() {
   try {
     output = await ask("deliver");
   } catch (error) {
-    log(error.message);
+    log(describe(error));
     return;
   }
   if (!output.names.length) {
@@ -680,7 +696,7 @@ async function offerResults() {
     plainText = answer.text || "";
   } catch (error) {
     plainText = "";
-    log(`Text could not be prepared: ${error.message}`);
+    log(`Text could not be prepared: ${describe(error)}`);
   }
 
   if (plainText) {
@@ -748,9 +764,8 @@ async function startOcr(language) {
     );
   }
 
+  let reported = "";
   const engine = await api.createWorker(language, 1, {
-    workerPath: TESSERACT_WORKER,
-    corePath: TESSERACT_CORE_PATH,
     langPath: TESSDATA,
     gzip: false, // the tessdata repository serves plain .traineddata
     logger: (event) => {
@@ -761,6 +776,20 @@ async function startOcr(language) {
         ui.barFill.style.width = `${event.progress * 100}%`;
       }
     },
+    // Without this the library throws inside a message callback, where nothing
+    // can catch it and the reason is lost.
+    errorHandler: (problem) => {
+      reported = describe(problem);
+      log(`OCR engine: ${reported}`);
+    },
+  }).catch((problem) => {
+    throw new Error(
+      [
+        describe(problem) || reported || "createWorker rejected without a reason",
+        `module: ${TESSERACT_MODULE}`,
+        `language data: ${TESSDATA}/${language}.traineddata`,
+      ].join("\n")
+    );
   });
   ocrReady = true;
   return engine;
@@ -829,7 +858,7 @@ async function runOcr() {
 
     log(`Read ${done} page${done === 1 ? "" : "s"} with OCR.`);
   } catch (error) {
-    showFailure("The scanned pages could not be read.", error && error.message);
+    showFailure("The scanned pages could not be read.", describe(error));
   } finally {
     running = false;
     finishRun();
@@ -869,7 +898,7 @@ async function saveToFolder() {
       ui.folderHint.hidden = false;
       log("No folder saved to.");
     } else {
-      log(`Could not save: ${error && error.message ? error.message : error}`);
+      log(`Could not save: ${describe(error)}`);
     }
   }
 }
