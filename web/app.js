@@ -94,6 +94,11 @@ const ui = {
   saveFolder: el("save-folder"),
   folderHint: el("folder-hint"),
   notice: el("notice"),
+  noticeText: el("notice-text"),
+  ocrOffer: el("ocr-offer"),
+  ocrLang: el("ocr-lang"),
+  ocrRun: el("ocr-run"),
+  ocrNote: el("ocr-note"),
   log: el("log"),
   failure: el("failure"),
   failureLead: el("failure-lead"),
@@ -104,6 +109,17 @@ const ui = {
 };
 
 const REPO = "https://github.com/ddbxl/TSP";
+
+/* OCR arrives only when a scanned page turns up: about 7 MB for the engine and
+   one language model, fetched then and cached by the browser afterwards. The
+   language data comes from Tesseract's own repository and the page images never
+   leave this machine. */
+const TESSERACT = "7.0.0";
+const TESSERACT_CORE = "6.1.2";
+const TESSERACT_MODULE = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT}/dist/tesseract.esm.min.js`;
+const TESSERACT_WORKER = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT}/dist/worker.min.js`;
+const TESSERACT_CORE_PATH = `https://cdn.jsdelivr.net/npm/tesseract.js-core@${TESSERACT_CORE}`;
+const TESSDATA = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main";
 const PYODIDE_PINNED = "0.29.4";
 const WHEEL_PLATFORM = "pyemscripten_2025_0_wasm32";
 
@@ -289,8 +305,9 @@ function clearFailure() {
   ui.failure.hidden = true;
 }
 
-function notice(html) {
-  ui.notice.innerHTML = html;
+function notice(html, { ocr = false } = {}) {
+  ui.noticeText.innerHTML = html;
+  ui.ocrOffer.hidden = !ocr;
   ui.notice.hidden = !html;
 }
 
@@ -442,6 +459,13 @@ function render() {
   });
 
   refresh();
+}
+
+function scanQueue() {
+  return queue
+    .filter((entry) => entry.state === "done" && entry.report)
+    .map((entry) => ({ entry, scans: entry.report.scans || [] }))
+    .filter((job) => job.scans.length);
 }
 
 /* Copy, text and files, for this document alone. */
@@ -607,14 +631,7 @@ async function run() {
     render();
   }
 
-  if (running) {
-    const scanned = queue.reduce(
-      (total, entry) =>
-        total + (entry.report && entry.report.needs_ocr ? entry.report.scanned : 0),
-      0
-    );
-    await offerResults(scanned);
-  }
+  if (running) await offerResults();
   finishRun();
 }
 
@@ -624,7 +641,7 @@ function finishRun() {
   render();
 }
 
-async function offerResults(scannedTotal) {
+async function offerResults() {
   let output;
   try {
     output = await ask("deliver");
@@ -686,13 +703,19 @@ async function offerResults(scannedTotal) {
   ui.downloadText.hidden = !plainText;
   log(`Done. ${output.names.length} files ready.`);
 
-  if (scannedTotal) {
+  const pending = scanQueue();
+  if (pending.length) {
+    const pages = pending.reduce((total, job) => total + job.scans.length, 0);
+    ui.ocrRun.textContent = `Read ${pages} scanned page${pages === 1 ? "" : "s"}`;
+    ui.ocrNote.textContent = ocrReady
+      ? "Already loaded."
+      : "About 7 MB the first time, then cached. Pages stay on this machine.";
     notice(
-      `<strong>${scannedTotal} pages hold an image and no text layer</strong>, ` +
-        `so they came out empty. Reading them needs OCR, which this page cannot ` +
-        `do. Run <a href="https://ocrmypdf.readthedocs.io" target="_blank" ` +
-        `rel="noopener">OCRmyPDF</a> over the file first, or use the desktop ` +
-        `build with Tesseract installed.`
+      `<strong>${pages} page${pages === 1 ? "" : "s"} hold an image and no text ` +
+        `layer</strong>, so nothing was extracted from ${
+          pending.length === 1 ? "it" : "them"
+        }. Reading ${pages === 1 ? "it" : "them"} takes about a second a page.`,
+      { ocr: true }
     );
   }
 }
@@ -704,6 +727,103 @@ async function copyText() {
   } else {
     log("Could not reach the clipboard. Use Download text instead.");
   }
+}
+
+/* -- OCR ---------------------------------------------------------------- */
+
+let ocrReady = false;
+let ocrEngine = null;
+
+async function startOcr(language) {
+  const { createWorker } = await import(TESSERACT_MODULE);
+  const engine = await createWorker(language, 1, {
+    workerPath: TESSERACT_WORKER,
+    corePath: TESSERACT_CORE_PATH,
+    langPath: TESSDATA,
+    gzip: false, // the tessdata repository serves plain .traineddata
+    logger: (event) => {
+      if (event.status && event.progress !== undefined) {
+        ui.barLabel.textContent = `${event.status} \u2014 ${Math.round(
+          event.progress * 100
+        )}%`;
+        ui.barFill.style.width = `${event.progress * 100}%`;
+      }
+    },
+  });
+  ocrReady = true;
+  return engine;
+}
+
+async function runOcr() {
+  const jobs = scanQueue();
+  if (!jobs.length || running) return;
+
+  const language = ui.ocrLang.value;
+  running = true;
+  ui.ocrOffer.hidden = true;
+  ui.results.hidden = true;
+  clearFailure();
+  render();
+
+  const total = jobs.reduce((sum, job) => sum + job.scans.length, 0);
+  let done = 0;
+
+  try {
+    // A change of language needs a fresh engine, so keep it simple and build
+    // one per run. Startup is fast once the model is cached.
+    if (ocrEngine) {
+      await ocrEngine.terminate();
+      ocrEngine = null;
+    }
+    ui.barLabel.textContent = "Fetching the OCR engine";
+    ui.barFill.style.width = "0%";
+    ocrEngine = await startOcr(language);
+
+    for (const job of jobs) {
+      const recognised = {};
+      for (const scan of job.scans) {
+        if (!running) break;
+        done += 1;
+        ui.barLabel.textContent = `Reading page ${scan.page} of ${job.entry.file.name} (${done} of ${total})`;
+        ui.barFill.style.width = `${(done / total) * 100}%`;
+
+        const answer = await ask("read", { path: scan.image });
+        const { data } = await ocrEngine.recognize(
+          new Blob([answer.bytes], { type: "image/png" })
+        );
+        if (data.text && data.text.trim()) {
+          recognised[scan.page] = data.text;
+        }
+      }
+      if (!running) break;
+
+      // Hand the words back and let the engine assemble the document again,
+      // so the recognised text gets the same cleaning as any other page.
+      ui.barLabel.textContent = `Rebuilding ${job.entry.file.name}`;
+      const answer = await ask("process", {
+        name: job.entry.file.name,
+        bytes: await job.entry.file.arrayBuffer(),
+        threshold: job.entry.mode,
+        dpi: Number(ui.dpi.value),
+        tables: job.entry.tables,
+        ocrText: recognised,
+      });
+      if (answer.report.ok) {
+        job.entry.report = answer.report;
+        recomputeTotals();
+      }
+      render();
+    }
+
+    log(`Read ${done} page${done === 1 ? "" : "s"} with OCR.`);
+  } catch (error) {
+    showFailure("The scanned pages could not be read.", error && error.message);
+  } finally {
+    running = false;
+    finishRun();
+  }
+
+  await offerResults();
 }
 
 async function saveToFolder() {
@@ -821,6 +941,7 @@ ui.cancel.addEventListener("click", cancel);
 ui.reset.addEventListener("click", resetAll);
 ui.saveFolder.addEventListener("click", saveToFolder);
 ui.copy.addEventListener("click", copyText);
+ui.ocrRun.addEventListener("click", () => runOcr());
 
 /* The engine warms itself as soon as the page opens. It lives on a worker
    thread, so the download and the WebAssembly compile cost the interface

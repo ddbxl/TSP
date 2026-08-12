@@ -158,15 +158,25 @@ lxml, which PyMuPDF imports when present and TSP does not use.
 
 ## Scanned pages
 
-TSP spots a page holding an image and no text layer, counts them, and says so
-rather than handing you an empty file.
+TSP spots a page holding an image and no text layer, counts them, and offers to
+read them rather than handing you an empty file.
 
-Reading them needs OCR. On the desktop, tick **Read scans (OCR)** or pass
-`--ocr`, which uses Tesseract through PyMuPDF at roughly 1.4 seconds a page.
-Tesseract 5 and its language data install separately; TSP bundles neither.
+**In the browser**, a scanned page brings up a language picker and a button.
+Tesseract arrives as WebAssembly the first time, about 7 MB for the engine and
+one language model, then stays cached. Recognition runs at roughly a second a
+page. The page images never leave the machine: only the language model is
+downloaded, from Tesseract's own repository.
 
-The browser cannot OCR, so it points you at
-[OCRmyPDF](https://ocrmypdf.readthedocs.io) instead.
+**On the desktop**, tick **Read scans (OCR)** or pass `--ocr`, which uses
+Tesseract through PyMuPDF at roughly 1.4 seconds a page. Tesseract 5 and its
+language data install separately there; TSP bundles neither.
+
+Either way the recognised words go through the same cleaning as a text layer, so
+a word Tesseract split across two lines comes back whole.
+
+No cloud service is involved at any point, and none will be. An online OCR API
+would mean posting your documents to somebody else's server, which is the one
+thing this tool exists to avoid.
 
 ## Tables
 
@@ -196,7 +206,8 @@ misaligns columns without saying so.
   thumb for English prose. No single true count exists, since every model
   tokenises differently. The figure runs low on tables and numbers, so treat it
   as a before-and-after ratio rather than a total.
-- OCR needs Tesseract installed separately, and never runs in the browser.
+- Desktop OCR needs Tesseract installed separately. The browser fetches its own
+  copy on demand.
 - Very large documents in the browser hold the PDF, its text and every rendered
   page in memory at once. Mobile browsers will give up sooner than desktop.
 

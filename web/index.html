@@ -67,7 +67,36 @@
       <p class="progress__label" id="progress-label"></p>
     </div>
 
-    <p id="notice" class="notice" hidden></p>
+    <div id="notice" class="notice" hidden>
+      <p id="notice-text"></p>
+      <div id="ocr-offer" class="notice__actions" hidden>
+        <label class="field field--inline">
+          <span>Language</span>
+          <select id="ocr-lang">
+            <option value="eng" selected>English</option>
+            <option value="fra">French</option>
+            <option value="deu">German</option>
+            <option value="spa">Spanish</option>
+            <option value="ita">Italian</option>
+            <option value="nld">Dutch</option>
+            <option value="por">Portuguese</option>
+            <option value="pol">Polish</option>
+            <option value="ces">Czech</option>
+            <option value="slk">Slovak</option>
+            <option value="hun">Hungarian</option>
+            <option value="ron">Romanian</option>
+            <option value="bul">Bulgarian</option>
+            <option value="ell">Greek</option>
+            <option value="eng+fra">English and French</option>
+            <option value="eng+deu">English and German</option>
+          </select>
+        </label>
+        <button id="ocr-run" class="button button--quiet" type="button">
+          Read the scanned pages
+        </button>
+        <span id="ocr-note" class="hint hint--inline"></span>
+      </div>
+    </div>
 
     <div id="results" class="results" hidden>
       <h3 class="label label--sub">Everything together</h3>

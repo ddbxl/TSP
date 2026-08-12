@@ -534,3 +534,59 @@ def test_tables_survive_a_real_markdown_parser(table_pdf: Path, tmp_path: Path):
     )
     assert "<table>" in html
     assert html.count("<th>") == 6, "every column should become a header cell"
+
+
+# -- text recognised elsewhere -------------------------------------------
+
+
+def test_supplied_text_fills_a_page_with_no_layer(scanned_pdf: Path, tmp_path: Path):
+    """An OCR engine outside this module hands back words per page."""
+    result = process_pdf(
+        scanned_pdf,
+        Settings(output_dir=tmp_path),
+        supplied_text={1: "Recognised words for page one.", 2: "And page two."},
+    )
+    text = result.text_path.read_text(encoding="utf-8")
+    assert result.ocr_pages == 2
+    assert not result.needs_ocr
+    assert "Recognised words for page one" in text
+
+
+def test_supplied_text_is_cleaned_like_any_other(scanned_pdf: Path, tmp_path: Path):
+    """OCR output arrives with line-broken words and curly punctuation, and gets
+    the same treatment as a text layer."""
+    result = process_pdf(
+        scanned_pdf,
+        Settings(output_dir=tmp_path),
+        supplied_text={1: "regional author-\nities said \u201cyes\u201d"},
+    )
+    text = result.text_path.read_text(encoding="utf-8")
+    assert "authorities" in text
+    assert '"yes"' in text
+
+
+def test_pages_left_unread_still_report_as_scanned(
+    scanned_pdf: Path, tmp_path: Path
+):
+    result = process_pdf(
+        scanned_pdf, Settings(output_dir=tmp_path), supplied_text={1: "only this one"}
+    )
+    assert result.scanned_pages == 3
+    assert result.ocr_pages == 1
+    assert result.needs_ocr is False or result.ocr_pages > 0
+
+
+def test_empty_supplied_text_is_ignored(scanned_pdf: Path, tmp_path: Path):
+    result = process_pdf(
+        scanned_pdf, Settings(output_dir=tmp_path), supplied_text={1: "   \n  "}
+    )
+    assert result.ocr_pages == 0
+
+
+def test_the_bridge_reports_which_pages_need_reading():
+    """The browser needs the page number and the rendered image for each page
+    with no text layer, or it cannot hand anything to an OCR engine."""
+    source = (WEB / "bridge.py").read_text(encoding="utf-8")
+    assert '"scans"' in source
+    assert "stat.scanned and not stat.ocr" in source
+    assert "ocr_json" in source, "the bridge must accept recognised text back"

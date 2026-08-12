@@ -17,6 +17,13 @@ Versions follow [Semantic Versioning](https://semver.org).
 - A Web Worker owns the Python runtime in the browser, so the page keeps
   repainting, progress arrives per page, and Cancel works.
 - A progress bar and a Cancel button in the browser build.
+- OCR in the browser, through Tesseract compiled to WebAssembly. A scanned page
+  brings up a language picker and a button; the engine and one language model,
+  about 7 MB, arrive on demand and stay cached. Page images are never uploaded.
+- The engine accepts text recognised outside it, page by page, so an OCR engine
+  in another language or another runtime can fill in a scanned page without the
+  engine knowing where the words came from. Those words get the same cleaning as
+  a text layer.
 - Finished files stay in the queue. Change a mode, a Tables box or the image
   quality and that file queues again; with nothing queued the button reads
   Process again. The browser keeps hold of the files, so nothing is re-picked.

@@ -333,7 +333,27 @@ select {
   line-height: 1.5;
   color: #6b5420;
 }
+.notice p { margin: 0; }
 .notice a { color: var(--amber); }
+
+.notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.9rem;
+  margin-top: 0.9rem;
+}
+.notice__actions .field span { color: #8a6c34; }
+.notice__actions select { border-color: #e3d4b2; }
+
+.field--inline { gap: 0.25rem; }
+
+.hint--inline {
+  margin: 0;
+  align-self: center;
+  max-width: 18rem;
+  color: #8a6c34;
+}
 
 .link--stop { color: var(--red); }
 

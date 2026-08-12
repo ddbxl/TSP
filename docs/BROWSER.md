@@ -237,9 +237,20 @@ without being copied.
 every rendered page at once. An 8.6 MB, 308-page report was fine. Mobile
 browsers give up sooner than desktop ones.
 
-**No OCR.** Tesseract is not in the Pyodide distribution, and Tesseract.js would
-mean another 2 to 15 MB per language plus slower throughput. The page detects
-scanned pages and points at OCRmyPDF instead. The desktop build does OCR.
+**OCR is a separate download.** Tesseract is not in the Pyodide distribution, so
+the page uses tesseract.js: 62 KB of JavaScript, a 2.9 MB WebAssembly core and a
+language model from tessdata_fast, 1.1 MB for French up to 6.1 MB for Dutch. All
+of it is fetched the first time a scanned page appears and cached afterwards, so
+a run with no scans costs nothing.
+
+The flow is two passes. The first reports which pages hold an image and no text,
+along with the PNG already rendered for each. JavaScript reads those images out
+of the virtual filesystem, recognises them, and hands the words back for a second
+pass, where they are cleaned like any other page. Measured at about 1.1 seconds a
+page at 200 dpi with 93% confidence on a clean scan.
+
+tesseract.js runs its own worker, so recognition does not block the page either.
+Nothing is uploaded: the language model is downloaded, the document is not.
 
 **Token estimates only.** Four characters per token, the same heuristic as the
 desktop build. Nobody ships a WebAssembly tokeniser small enough to justify

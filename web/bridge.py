@@ -31,13 +31,19 @@ def tsp_drop(name):
     import shutil
     shutil.rmtree(tsp_target(name), ignore_errors=True)
 
-def tsp_process(name, threshold_pct, dpi, tables, report):
+def tsp_process(name, threshold_pct, dpi, tables, report, ocr_json=None):
     """Process one PDF. 'report' is a JS callback taking (page, pages).
+
+    'ocr_json' maps a page number to text recognised elsewhere.
 
     Clears this document's previous output first, so running it again at a
     different threshold cannot leave stale page images behind.
     """
     tsp_drop(name)
+    # Pages read by an OCR engine outside Python, keyed by page number.
+    supplied = None
+    if ocr_json:
+        supplied = {int(page): text for page, text in json.loads(ocr_json).items()}
     settings = Settings(
         image_threshold=1.01 if threshold_pct >= 100 else threshold_pct / 100.0,
         render_zoom=max(0.25, dpi / 72.0),
@@ -49,6 +55,7 @@ def tsp_process(name, threshold_pct, dpi, tables, report):
         WORK / "in" / name,
         settings,
         progress=lambda done, total: report(done, total),
+        supplied_text=supplied,
     )
     return json.dumps({
         "ok": result.ok,
@@ -58,6 +65,13 @@ def tsp_process(name, threshold_pct, dpi, tables, report):
         "tables": result.tables_found,
         "scanned": result.scanned_pages,
         "needs_ocr": result.needs_ocr,
+        # Which pages hold no text, and the image rendered for each, so an OCR
+        # engine on the other side knows exactly what to read.
+        "scans": [
+            {"page": stat.number, "image": f"{tsp_target(name).name}/{stat.image_name}"}
+            for stat in result.page_stats
+            if stat.scanned and not stat.ocr and stat.image_name
+        ],
         "tokens_in": result.tokens_in,
         "tokens_out": result.tokens_out,
         "saving": round(result.saving, 4),

@@ -17,7 +17,7 @@ import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 try:  # PyMuPDF >= 1.24.3 prefers the `pymupdf` name; `fitz` is the legacy alias.
     import pymupdf
@@ -442,8 +442,14 @@ def process_pdf(
     settings: Settings | None = None,
     progress: ProgressCb | None = None,
     is_cancelled: Callable[[], bool] | None = None,
+    supplied_text: Mapping[int, str] | None = None,
 ) -> Result:
-    """Extract one PDF into `<name>_TSP/<name>.txt` plus page images.
+    """Extract one PDF into `<name>_TSP/<name>.md` plus page images.
+
+    `supplied_text` maps a 1-based page number to text recognised elsewhere,
+    which stands in for that page's own text layer. It lets an OCR engine that
+    lives outside this module, in a browser for instance, fill in scanned pages
+    without the engine caring where the words came from.
 
     Never raises for a bad input file: read `Result.ok` and `Result.message`.
     """
@@ -530,7 +536,13 @@ def process_pdf(
                 scanned = _looks_scanned(len(raw.strip()), coverage, settings)
 
             did_ocr = False
-            if scanned and ocr_ready:
+            handed = (supplied_text or {}).get(index + 1)
+            if handed and handed.strip():
+                # Text recognised outside this module, for a page whose own
+                # layer holds nothing.
+                raw = handed
+                did_ocr = True
+            elif scanned and ocr_ready:
                 try:
                     ocr_text = _ocr_page(page, settings)
                     if ocr_text.strip():
