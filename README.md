@@ -122,7 +122,10 @@ Tesseract through PyMuPDF at about 1.4 seconds a page. Tesseract 5 and its
 language data need their own install there, and TSP bundles neither.
 
 Either way the recognised words go through the same cleaning as a text layer, so
-a word Tesseract split across two lines comes back whole.
+a word Tesseract split across two lines comes back whole. In the browser the
+words are folded into the document already written rather than prompting a fresh
+run, so reading three pages of a 120-page report costs the recognition and
+nothing else.
 
 No cloud service touches any of this, and none will. An online OCR API
 would mean posting your documents to somebody else's server, which is the one

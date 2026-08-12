@@ -26,6 +26,7 @@ except ImportError:  # pragma: no cover
 
 __all__ = [
     "Settings",
+    "prepare_page_text",
     "PageStat",
     "Result",
     "MODES",
@@ -165,6 +166,10 @@ class Result:
     ok: bool = True
     message: str = ""
     tables_rejected: int = 0
+    # The running headers and footers found for this document. Keeping them
+    # lets text recognised later be cleaned the same way without reading the
+    # PDF again.
+    boilerplate: list[str] = field(default_factory=list)
 
     @property
     def scanned_pages(self) -> int:
@@ -225,6 +230,18 @@ def clean_text(raw: str, settings: Settings) -> str:
     text = _SPACE_RUN.sub(" ", text)
     text = _BLANK_RUN.sub("\n\n", text)
     return text.strip()
+
+
+def prepare_page_text(
+    raw: str, boilerplate: Iterable[str] = (), settings: Settings | None = None
+) -> str:
+    """Clean one page's text the way a whole run would.
+
+    Text recognised outside the engine can be brought up to the same state
+    without opening the PDF again.
+    """
+    settings = settings or Settings()
+    return _strip_boilerplate(clean_text(raw, settings), set(boilerplate), settings)
 
 
 def _boilerplate_key(line: str) -> str:
@@ -661,6 +678,7 @@ def process_pdf(
             visual_flags.append(visual)
 
         boilerplate = _boilerplate_lines(clean_pages, settings)
+        result.boilerplate = sorted(boilerplate)
 
         # Pass 2: strip boilerplate, render, assemble.
         chunks: list[str] = [_header(source, doc, settings, page_count)]

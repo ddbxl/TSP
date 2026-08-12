@@ -103,6 +103,12 @@ console.log("deliver (one document) ->", outOne.names.length, "files,",
 const one = await ask("read", { path: out.names[0] });
 console.log("read ->", one.path, one.bytes.length, "bytes");
 
+const applied = await ask("applyOcr", {
+  name: "sample.pdf",
+  ocrText: { 1: "words recognised elsewhere" },
+});
+console.log("applyOcr -> settled;", applied.report.message);
+
 await ask("drop", { name: "sample.pdf" });
 console.log("drop -> settled");
 await ask("clear");

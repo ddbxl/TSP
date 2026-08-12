@@ -59,6 +59,14 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- Reading the scanned pages reprocessed the whole document. Three scanned pages
+  in a 120-page report cost a full 4.2 s re-extraction of the other 117. The
+  recognised text is folded into the finished markdown instead, which takes 9 ms.
+  A run leaves notes beside its output, holding the running headers it found and
+  each page's length, so the OCR step never opens the PDF again.
+- The engine exposes `prepare_page_text`, so text recognised outside it gets the
+  same cleaning without duplicating the logic.
+
 - Bordered callout boxes and chart labelling came through as tables, filling the
   output with grids of prose and empty columns. Each detected grid is now judged
   on how consistently its columns are filled and how much text its cells hold.

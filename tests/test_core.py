@@ -731,3 +731,33 @@ def test_an_ocr_failure_names_the_urls_it_used():
     app = (WEB / "app.js").read_text(encoding="utf-8")
     assert "language data:" in app
     assert "errorHandler" in app, "library errors would otherwise be unreachable"
+
+
+def test_folding_ocr_in_does_not_reprocess_the_document():
+    """Placing a few recognised pages once meant re-extracting every other page.
+    The bridge edits the finished markdown instead."""
+    bridge = (WEB / "bridge.py").read_text(encoding="utf-8")
+    assert "def tsp_apply_ocr" in bridge
+    assert "process_pdf" not in bridge.split("def tsp_apply_ocr")[1].split("\ndef ")[0]
+
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert 'ask("applyOcr"' in app
+    # The OCR routine itself must not ask for a fresh run of the whole file.
+    routine = app.split("async function runOcr()")[1].split("\nasync function ")[0]
+    assert 'ask("process"' not in routine, "the old reprocess call remains"
+
+
+def test_the_run_notes_stay_out_of_the_deliverables():
+    bridge = (WEB / "bridge.py").read_text(encoding="utf-8")
+    assert bridge.count('relative.name == "run.json"') == 2, (
+        "the sidecar must be filtered from both the zip and the file list"
+    )
+
+
+def test_a_page_cleaner_is_public_for_reuse():
+    """The bridge cleans recognised text the same way a run would, so the engine
+    has to expose that step rather than keep it private."""
+    from tsp.core import prepare_page_text
+
+    assert prepare_page_text("author-\nities said \u201cyes\u201d") == 'authorities said "yes"'
+    assert prepare_page_text("Page 4 of 9\nreal text", ["Page # of #"]) == "real text"

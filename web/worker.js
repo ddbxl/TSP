@@ -158,6 +158,14 @@ self.onmessage = async (event) => {
       case "text":
         reply(id, { text: pyodide.globals.get("tsp_text")(message.name) });
         break;
+      case "applyOcr":
+        reply(id, {
+          report: JSON.parse(
+            pyodide.globals
+              .get("tsp_apply_ocr")(message.name, JSON.stringify(message.ocrText))
+          ),
+        });
+        break;
       case "read":
         readOne(id, message.path);
         break;

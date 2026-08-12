@@ -838,15 +838,12 @@ async function runOcr() {
       }
       if (!running) break;
 
-      // Hand the words back and let the engine assemble the document again,
-      // so the recognised text gets the same cleaning as any other page.
-      ui.barLabel.textContent = `Rebuilding ${job.entry.file.name}`;
-      const answer = await ask("process", {
+      // Fold the words into the document already written. Reprocessing the
+      // whole file to place a few pages re-extracted every other page for
+      // nothing.
+      ui.barLabel.textContent = `Placing the text in ${job.entry.file.name}`;
+      const answer = await ask("applyOcr", {
         name: job.entry.file.name,
-        bytes: await job.entry.file.arrayBuffer(),
-        threshold: job.entry.mode,
-        dpi: Number(ui.dpi.value),
-        tables: job.entry.tables,
         ocrText: recognised,
       });
       if (answer.report.ok) {
