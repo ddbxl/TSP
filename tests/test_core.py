@@ -135,6 +135,7 @@ def test_processes_and_writes_output(sample: Path):
     assert result.ok, result.message
     assert result.pages == 11
     assert result.text_path is not None and result.text_path.is_file()
+    assert result.text_path.suffix == ".md"
     assert (result.text_path.parent / "MANIFEST.txt").is_file()
 
 
@@ -491,3 +492,45 @@ def test_a_failed_request_rejects_rather_than_hanging():
     assert "failed: detail" in worker, "errors must come back against the id"
     assert "message.failed" in app, "the page must turn a failure into a rejection"
     assert "rejectAll" in app, "a dead worker must not leave promises waiting"
+
+
+# -- markdown ------------------------------------------------------------
+
+
+def test_output_is_markdown(table_pdf: Path, tmp_path: Path):
+    result = process_pdf(table_pdf, Settings(output_dir=tmp_path))
+    assert result.text_path.suffix == ".md"
+
+
+def test_a_grid_is_padded_so_a_parser_reads_it_as_a_table(
+    table_pdf: Path, tmp_path: Path
+):
+    """A grid touching prose or a page marker is read as a paragraph of pipes,
+    so each one needs a blank line on either side."""
+    result = process_pdf(
+        table_pdf, Settings(extract_tables=True, output_dir=tmp_path)
+    )
+    lines = result.text_path.read_text(encoding="utf-8").split("\n")
+    first = next(i for i, line in enumerate(lines) if line.startswith("|"))
+    assert lines[first - 1].strip() == "", "a grid needs a blank line above it"
+
+
+def test_page_markers_stand_alone(sample: Path, tmp_path: Path):
+    """A marker followed straight away by a grid would stop the grid parsing."""
+    result = process_pdf(sample, Settings(output_dir=tmp_path))
+    lines = result.text_path.read_text(encoding="utf-8").split("\n")
+    for index, line in enumerate(lines[:-1]):
+        if line.startswith("--- p."):
+            assert lines[index + 1].strip() == "", f"no blank line after {line}"
+
+
+def test_tables_survive_a_real_markdown_parser(table_pdf: Path, tmp_path: Path):
+    markdown = pytest.importorskip("markdown")
+    result = process_pdf(
+        table_pdf, Settings(extract_tables=True, output_dir=tmp_path)
+    )
+    html = markdown.markdown(
+        result.text_path.read_text(encoding="utf-8"), extensions=["tables"]
+    )
+    assert "<table>" in html
+    assert html.count("<th>") == 6, "every column should become a header cell"
