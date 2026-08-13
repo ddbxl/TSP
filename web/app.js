@@ -75,6 +75,10 @@ const ui = {
   drop: el("drop"),
   picker: el("picker"),
   queue: el("queue"),
+  bulk: el("bulk"),
+  bulkMode: el("bulk-mode"),
+  bulkTables: el("bulk-tables"),
+  bulkFigures: el("bulk-figures"),
   dpi: el("dpi"),
   run: el("run"),
   cancel: el("cancel"),
@@ -335,6 +339,60 @@ function showProgress(name, page, pages) {
 
 /* -- queue -------------------------------------------------------------- */
 
+/* One control for every row. It reflects the shared setting where the rows
+   agree and reads Mixed where they do not, so it never claims a state the queue
+   is not in. */
+
+function buildBulkOptions() {
+  const mixed = document.createElement("option");
+  mixed.value = "";
+  mixed.textContent = "Mixed";
+  ui.bulkMode.append(mixed);
+  for (const mode of MODES) {
+    const option = document.createElement("option");
+    option.value = String(mode.value);
+    option.textContent = mode.label;
+    ui.bulkMode.append(option);
+  }
+}
+
+function shared(read) {
+  if (!queue.length) return undefined;
+  const first = read(queue[0]);
+  return queue.every((entry) => read(entry) === first) ? first : undefined;
+}
+
+function syncBulk() {
+  ui.bulk.hidden = queue.length < 2;
+  if (ui.bulk.hidden) return;
+
+  const mode = shared((entry) => entry.mode);
+  ui.bulkMode.value = mode === undefined ? "" : String(mode);
+  ui.bulkMode.disabled = running;
+
+  for (const [box, read] of [
+    [ui.bulkTables, (entry) => entry.tables],
+    [ui.bulkFigures, (entry) => entry.figures],
+  ]) {
+    const value = shared(read);
+    box.indeterminate = value === undefined;
+    box.checked = value === true;
+    box.disabled = running;
+  }
+}
+
+function applyToAll(change) {
+  for (const entry of queue) {
+    change(entry);
+    if (entry.state === "done" || entry.state === "failed") {
+      entry.state = "queued";
+      entry.report = null;
+    }
+  }
+  recomputeTotals();
+  render();
+}
+
 function markStale(entry) {
   if (entry.state === "done" || entry.state === "failed") {
     entry.state = "queued";
@@ -489,6 +547,7 @@ function render() {
     ui.queue.append(row);
   });
 
+  syncBulk();
   refresh();
 }
 
@@ -988,6 +1047,26 @@ ui.picker.addEventListener("change", () => {
 ui.drop.addEventListener("drop", (event) => {
   event.preventDefault();
   addFiles(event.dataTransfer.files);
+});
+buildBulkOptions();
+ui.bulkMode.addEventListener("change", () => {
+  const chosen = ui.bulkMode.value;
+  if (!chosen) return; // Mixed is a report, not a request
+  applyToAll((entry) => {
+    entry.mode = Number(chosen);
+  });
+});
+ui.bulkTables.addEventListener("change", () => {
+  const wanted = ui.bulkTables.checked;
+  applyToAll((entry) => {
+    entry.tables = wanted;
+  });
+});
+ui.bulkFigures.addEventListener("change", () => {
+  const wanted = ui.bulkFigures.checked;
+  applyToAll((entry) => {
+    entry.figures = wanted;
+  });
 });
 ui.dpi.addEventListener("change", staleAll);
 ui.run.addEventListener("click", () => run());

@@ -41,6 +41,17 @@
       <input id="picker" type="file" accept="application/pdf" multiple hidden>
     </div>
 
+    <div id="bulk" class="bulk" hidden>
+      <span class="bulk__label">All documents</span>
+      <select id="bulk-mode" aria-label="Set the mode for every document"></select>
+      <label class="toggle">
+        <input type="checkbox" id="bulk-tables">Tables
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="bulk-figures">Figures
+      </label>
+    </div>
+
     <ul id="queue" class="queue"></ul>
 
     <div class="controls">

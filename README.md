@@ -52,6 +52,11 @@ that the same way as a cancelled dialogue, so the page cannot tell the two apart
 It opens the picker in Documents for that reason and says so if nothing gets
 saved.
 
+With two files or more, a row above the list sets the mode, Tables and Figures
+for all of them at once. It reads Mixed where the rows differ rather than
+claiming a setting the queue is not in, and a single row can still be changed
+afterwards.
+
 Finished files stay in the queue. Change a setting on one and it queues again;
 change nothing and the button offers Process again. Neither needs the file
 re-picked.

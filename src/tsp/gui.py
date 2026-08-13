@@ -200,6 +200,46 @@ class App:
             toolbar, text="Image quality", font=FONT_SMALL, bg=PAPER, fg=MUTED
         ).pack(side="right", padx=(0, 6))
 
+        # One control for every row. Eight documents otherwise means eight of
+        # each, which is what the browser build was told about first.
+        bulk = tk.Frame(self.root, bg=PAPER)
+        bulk.pack(fill="x", padx=20, pady=(4, 0))
+        tk.Label(
+            bulk, text="Set every file", font=FONT_SMALL, bg=PAPER, fg=MUTED
+        ).pack(side="left", padx=(0, 8))
+
+        self.bulk_mode = tk.StringVar(value="")
+        self.bulk_box = ttk.Combobox(
+            bulk,
+            textvariable=self.bulk_mode,
+            values=list(MODES),
+            state="readonly",
+            width=24,
+        )
+        self.bulk_box.pack(side="left")
+        self.bulk_box.bind("<<ComboboxSelected>>", lambda _e: self._apply_mode_to_all())
+
+        self.bulk_tables = tk.BooleanVar(value=False)
+        self.bulk_figures = tk.BooleanVar(value=False)
+        for text, variable, setter in (
+            ("Tables", self.bulk_tables, "tables"),
+            ("Figures", self.bulk_figures, "figures"),
+        ):
+            tk.Checkbutton(
+                bulk,
+                text=text,
+                variable=variable,
+                command=lambda v=variable, f=setter: self._apply_flag_to_all(f, v.get()),
+                bg=PAPER,
+                fg=MUTED,
+                font=FONT_SMALL,
+                activebackground=PAPER,
+                selectcolor=PAPER,
+                relief="flat",
+                highlightthickness=0,
+                cursor="hand2",
+            ).pack(side="left", padx=(10, 0))
+
         holder = tk.Frame(self.root, bg=CARD, highlightbackground="#d8dce3", highlightthickness=1)
         holder.pack(fill="both", expand=True, padx=20, pady=8)
 
@@ -397,6 +437,17 @@ class App:
         self.progress["value"] = 0
         self.status.config(text="Waiting for files.", fg=MUTED)
         self._refresh()
+
+    def _apply_mode_to_all(self) -> None:
+        chosen = self.bulk_mode.get()
+        if chosen not in MODES:
+            return
+        for item in self.items:
+            item.mode.set(chosen)
+
+    def _apply_flag_to_all(self, field: str, wanted: bool) -> None:
+        for item in self.items:
+            getattr(item, field).set(wanted)
 
     def _mark_stale(self, item: QueueItem) -> None:
         """A changed setting makes an earlier result out of date."""

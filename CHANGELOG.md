@@ -6,6 +6,10 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Added
 
+- One control for every document, in the browser and in the window: a row above
+  the list sets the mode, Tables and Figures for the whole queue. It reads Mixed
+  where the rows differ, and re-queues anything already finished.
+
 - Figures, off by default. Charts drawn in vector paths are rendered as images
   and the orphan axis labels they leave in the text are dropped. Drawings are
   grouped into the areas of a page they cover, each area grows to take in the

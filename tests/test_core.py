@@ -861,3 +861,38 @@ def test_a_bordered_box_of_prose_is_not_turned_into_a_picture(
     text = result.text_path.read_text(encoding="utf-8")
     assert "[figure:" not in text
     assert "Estonia performs above the EU average" in text
+
+
+# -- setting every document at once --------------------------------------
+
+
+def test_the_browser_offers_one_control_for_every_document():
+    """Eight documents otherwise meant eight of each setting."""
+    markup = (WEB / "index.html").read_text(encoding="utf-8")
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    for name in ("bulk-mode", "bulk-tables", "bulk-figures"):
+        assert f'id="{name}"' in markup
+    assert "function applyToAll" in app
+
+
+def test_the_bulk_control_reports_a_mixed_queue():
+    """Claiming a setting the rows are not all in would be a lie, so it reads
+    Mixed where they differ."""
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "indeterminate" in app
+    assert 'if (!chosen) return' in app, "Mixed must not be applied as a value"
+
+
+def test_setting_every_document_requeues_finished_ones():
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    routine = app.split("function applyToAll")[1].split("\nfunction ")[0]
+    assert 'entry.state = "queued"' in routine
+    assert "recomputeTotals" in routine
+
+
+def test_the_window_offers_the_same_control():
+    gui = (Path(__file__).resolve().parent.parent / "src" / "tsp" / "gui.py").read_text(
+        encoding="utf-8"
+    )
+    assert "_apply_mode_to_all" in gui
+    assert "_apply_flag_to_all" in gui
