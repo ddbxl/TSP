@@ -896,3 +896,39 @@ def test_the_window_offers_the_same_control():
     )
     assert "_apply_mode_to_all" in gui
     assert "_apply_flag_to_all" in gui
+
+
+# -- workflow permissions -------------------------------------------------
+
+
+WORKFLOWS = Path(__file__).resolve().parent.parent / ".github" / "workflows"
+
+
+def test_every_workflow_limits_its_token():
+    """A workflow with no permissions block inherits the repository default,
+    which on older repositories is read and write."""
+    yaml = pytest.importorskip("yaml")
+
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        spec = yaml.safe_load(path.read_text(encoding="utf-8"))
+        top = spec.get("permissions")
+        for name, job in spec["jobs"].items():
+            assert top is not None or "permissions" in job, (
+                f"{path.name}: job {name} runs with the repository default"
+            )
+
+
+def test_no_job_gets_write_access_it_does_not_use():
+    """Only the job that publishes needs to write, and a job-level block
+    replaces the workflow-level one rather than adding to it."""
+    yaml = pytest.importorskip("yaml")
+
+    spec = yaml.safe_load((WORKFLOWS / "pages.yml").read_text(encoding="utf-8"))
+    assert spec["permissions"] == {"contents": "read"}
+    assert "permissions" not in spec["jobs"]["build"]
+    assert spec["jobs"]["deploy"]["permissions"]["pages"] == "write"
+
+    spec = yaml.safe_load((WORKFLOWS / "test.yml").read_text(encoding="utf-8"))
+    assert spec["permissions"] == {"contents": "read"}
+    for job in spec["jobs"].values():
+        assert "permissions" not in job, "a test job needs no more than read"

@@ -70,6 +70,12 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- The test workflow declared no permissions, so its token inherited the
+  repository default, which on repositories created before February 2023 is read
+  and write. Both workflows are read-only now, with write access to Pages scoped
+  to the job that deploys. Flagged by CodeQL as
+  `actions/missing-workflow-permissions`.
+
 - Reading the scanned pages reprocessed the whole document. Three scanned pages
   in a 120-page report cost a full 4.2 s re-extraction of the other 117. The
   recognised text is folded into the finished markdown instead, which takes 9 ms.
