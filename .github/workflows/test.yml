@@ -6,6 +6,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Neither job writes anything, so the token gets read access and nothing else.
+permissions:
+  contents: read
+
 jobs:
   pytest:
     runs-on: ubuntu-latest

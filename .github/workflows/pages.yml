@@ -10,10 +10,11 @@ on:
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
+# The build job only reads the repository. Writing to Pages is scoped to the
+# job that deploys, since a job-level block replaces this one rather than
+# adding to it.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -96,6 +97,10 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
