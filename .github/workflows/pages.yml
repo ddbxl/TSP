@@ -35,6 +35,7 @@ jobs:
           cp assets/icon.svg assets/favicon.png _site/
           # One engine serves both targets: src/tsp/core.py.
           cp src/tsp/core.py _site/tsp_core.py
+          cp src/tsp/office.py _site/tsp_office.py
           cp LICENSE _site/LICENSE.txt
 
       - name: Check every web file reached the site
@@ -60,7 +61,7 @@ jobs:
         run: |
           python3 -c "
           import ast, pathlib, sys
-          for name in ('src/tsp/core.py', 'web/bridge.py'):
+          for name in ('src/tsp/core.py', 'src/tsp/office.py', 'web/bridge.py'):
               try:
                   ast.parse(pathlib.Path(name).read_text())
               except SyntaxError as exc:
@@ -76,7 +77,7 @@ jobs:
           allowed = {
               "os", "re", "io", "contextlib", "unicodedata", "collections",
               "dataclasses", "pathlib", "typing", "pymupdf", "fitz",
-              "__future__",
+              "zipfile", "xml", "__future__",
           }
           found = set()
           for node in ast.walk(tree):
