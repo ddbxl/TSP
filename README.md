@@ -113,7 +113,15 @@ are a zip of XML, so the standard library reads them and everything TSP has to
 guess at in a PDF is stated outright: a heading carries a style name rather than
 a font size, a table is an element rather than a grid of ruled lines, and running
 headers live in a separate part of the file so they never enter the body at all.
-No detection, no thresholds, no judgement.
+
+Two habits of Commission templates get handled. Heading levels are read from the
+style definitions rather than the style names, so a Slovenian author's `Naslov1`
+and a German's `berschrift1` are found like any other. And a table whose cells
+hold whole sections is treated as a layout frame and walked into, since reading
+one as data turned a chapter into a single 59,000-character line.
+
+A table of contents is dropped: its page numbers point at a pagination that no
+longer exists.
 
 Those formats have no pages, so page markers, the image threshold and the
 scanned-page check do not apply to them.
@@ -316,6 +324,17 @@ furniture give up more.
   demand.
 - Very large documents in the browser hold the PDF, its text and every rendered
   page in memory at once. Mobile browsers will give up sooner than desktop.
+
+## Releasing
+
+Change `version` in `pyproject.toml`, match it in `src/tsp/__init__.py`, and add
+a `## <version>` section to `CHANGELOG.md`. Pushing that to `main` builds the
+archives, tags `v<version>`, and publishes a release whose notes are that
+changelog section.
+
+The workflow refuses to publish when the three disagree, when the tag exists
+already, or when the tests fail. A test makes the same comparison on every
+commit, so a mismatch surfaces before release time.
 
 ## Serving the browser build
 

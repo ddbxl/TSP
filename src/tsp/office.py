@@ -24,12 +24,18 @@ __all__ = ["Block", "read_office", "blocks_to_markdown", "OFFICE_SUFFIXES"]
 
 OFFICE_SUFFIXES = {".docx", ".odt"}
 
+# A cell longer than this holds prose, so the table is a layout frame rather
+# than data. Measured on a Commission partnership agreement: data cells reached
+# 143 characters, layout cells 5,000 to 59,000.
+MAX_DATA_CELL = 300
+
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 TEXT_NS = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
 TABLE_NS = "{urn:oasis:names:tc:opendocument:xmlns:table:1.0}"
 OFFICE_NS = "{urn:oasis:names:tc:opendocument:xmlns:office:1.0}"
 
-_HEADING_STYLE = re.compile(r"heading[ _-]?(\d)", re.IGNORECASE)
+_HEADING_NAME = re.compile(r"heading[ _-]?(\d)", re.IGNORECASE)
+_TOC_NAME = re.compile(r"^toc[ _-]?\d", re.IGNORECASE)
 
 
 @dataclass
@@ -45,6 +51,47 @@ class Block:
 # --------------------------------------------------------------------------
 # Word
 # --------------------------------------------------------------------------
+
+
+def _docx_styles(archive) -> tuple[dict[str, int], set[str]]:
+    """Map a style id to a heading level, and collect the contents styles.
+
+    A Slovenian author's headings are called Naslov1 and Naslov2, a German's
+    berschrift1. The style definitions carry `w:name` of "heading 1" and an
+    outline level regardless, so the mapping comes from there rather than from
+    the identifier.
+    """
+    headings: dict[str, int] = {}
+    contents: set[str] = set()
+    try:
+        root = ET.fromstring(archive.read("word/styles.xml"))
+    except (KeyError, ET.ParseError):
+        return headings, contents
+
+    for style in root.iter(f"{W}style"):
+        style_id = style.get(f"{W}styleId")
+        if not style_id:
+            continue
+        name_node = style.find(f"{W}name")
+        name = (name_node.get(f"{W}val") or "") if name_node is not None else ""
+
+        if _TOC_NAME.match(name):
+            contents.add(style_id)
+            continue
+
+        match = _HEADING_NAME.search(name)
+        if match:
+            headings[style_id] = min(6, int(match.group(1)))
+            continue
+        level = style.find(f"{W}pPr/{W}outlineLvl")
+        if level is not None and name.lower() != "toc heading":
+            try:
+                depth = int(level.get(f"{W}val") or "9")
+            except ValueError:
+                continue
+            if depth <= 5:
+                headings[style_id] = depth + 1
+    return headings, contents
 
 
 def _docx_text(node) -> str:
@@ -65,27 +112,19 @@ def _docx_style(paragraph) -> str:
     return (style.get(f"{W}val") or "") if style is not None else ""
 
 
-def _read_docx(path: Path) -> list[Block]:
-    with zipfile.ZipFile(path) as archive:
-        # Only the body. Headers and footers sit in their own parts.
-        body = ET.fromstring(archive.read("word/document.xml")).find(f"{W}body")
-
-    blocks: list[Block] = []
-    if body is None:
-        return blocks
-
-    for child in body:
+def _docx_body(node, headings, contents, blocks: list[Block], depth: int = 0) -> None:
+    """Walk a body or a table cell, appending blocks in reading order."""
+    for child in node:
         if child.tag == f"{W}p":
+            style = _docx_style(child)
+            if style in contents:
+                continue  # a table of contents entry, whose page numbers are gone
             text = _docx_text(child)
             if not text:
                 continue
-            style = _docx_style(child)
-            heading = _HEADING_STYLE.search(style)
-            if heading:
-                blocks.append(
-                    Block("heading", text, level=min(6, int(heading.group(1))))
-                )
-            elif style.lower() in ("title",):
+            if style in headings:
+                blocks.append(Block("heading", text, level=headings[style]))
+            elif style.lower() == "title":
                 blocks.append(Block("heading", text, level=1))
             elif child.find(f"{W}pPr/{W}numPr") is not None:
                 blocks.append(Block("list", text))
@@ -93,13 +132,35 @@ def _read_docx(path: Path) -> list[Block]:
                 blocks.append(Block("body", text))
 
         elif child.tag == f"{W}tbl":
-            rows = [
+            rows_xml = child.findall(f"{W}tr")
+            grid = [
                 [_docx_text(cell) for cell in row.findall(f"{W}tc")]
-                for row in child.findall(f"{W}tr")
+                for row in rows_xml
             ]
-            if any(any(cell for cell in row) for row in rows):
-                blocks.append(Block("table", rows=rows))
+            if not any(any(cell for cell in row) for row in grid):
+                continue
 
+            longest = max((len(cell) for row in grid for cell in row), default=0)
+            if longest <= MAX_DATA_CELL and depth < 4:
+                blocks.append(Block("table", rows=grid))
+                continue
+
+            # A layout frame. Its cells hold sections of the document, so walk
+            # into them rather than flattening a chapter into one row.
+            for row in rows_xml:
+                for cell in row.findall(f"{W}tc"):
+                    _docx_body(cell, headings, contents, blocks, depth + 1)
+
+
+def _read_docx(path: Path) -> list[Block]:
+    with zipfile.ZipFile(path) as archive:
+        headings, contents = _docx_styles(archive)
+        # Only the body. Headers and footers sit in their own parts.
+        body = ET.fromstring(archive.read("word/document.xml")).find(f"{W}body")
+
+    blocks: list[Block] = []
+    if body is not None:
+        _docx_body(body, headings, contents, blocks)
     return blocks
 
 

@@ -6,6 +6,12 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Added
 
+- A release workflow. Changing the version in `pyproject.toml` on `main` builds
+  the archives, tags the commit and publishes a release with that version's
+  changelog section as its notes. It refuses to publish when the version
+  disagrees between `pyproject.toml`, the package and the changelog, when the tag
+  exists already, or when the tests fail.
+
 - Word and OpenDocument files, read from their XML by the standard library, so
   it works in the browser too. Headings, paragraphs, lists and tables come
   through as markdown, and because both formats state their structure there is

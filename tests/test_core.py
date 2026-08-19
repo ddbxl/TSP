@@ -1086,3 +1086,143 @@ def test_the_browser_accepts_what_the_engine_reads():
     listed = set(re.findall(r'"(\.[a-z0-9]+)"', app.split("const READS = [")[1].split("];")[0]))
     missing = SUPPORTED_SUFFIXES - listed
     assert not missing, f"the page turns away {sorted(missing)}"
+
+
+def test_headings_named_in_another_language_are_found(tmp_path: Path):
+    """A Slovenian author's headings are called Naslov1, a German's
+    berschrift1. The style definitions name themselves in English whatever the
+    author's language, so the level comes from there."""
+    from tsp.office import read_office
+
+    source = tmp_path / "localised.docx"
+    _write_docx_with_styles(source)
+    blocks = read_office(source)
+    headings = [block for block in blocks if block.kind == "heading"]
+    assert [block.level for block in headings] == [1, 2]
+    assert headings[0].text == "1. Selected policy objectives"
+
+
+def _write_docx_with_styles(path: Path) -> None:
+    """A minimal Word file whose heading styles carry non-English ids."""
+    import zipfile
+
+    styles = """<?xml version="1.0"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:styleId="Naslov1"><w:name w:val="heading 1"/>
+    <w:pPr><w:outlineLvl w:val="0"/></w:pPr></w:style>
+  <w:style w:styleId="Naslov2"><w:name w:val="heading 2"/>
+    <w:pPr><w:outlineLvl w:val="1"/></w:pPr></w:style>
+  <w:style w:styleId="Kazalovsebine1"><w:name w:val="toc 1"/></w:style>
+</w:styles>"""
+    document = """<?xml version="1.0"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+ <w:body>
+  <w:p><w:pPr><w:pStyle w:val="Kazalovsebine1"/></w:pPr>
+    <w:r><w:t>1. Selected policy objectives 5</w:t></w:r></w:p>
+  <w:p><w:pPr><w:pStyle w:val="Naslov1"/></w:pPr>
+    <w:r><w:t>1. Selected policy objectives</w:t></w:r></w:p>
+  <w:p><w:r><w:t>Slovenia will concentrate support on innovation.</w:t></w:r></w:p>
+  <w:p><w:pPr><w:pStyle w:val="Naslov2"/></w:pPr>
+    <w:r><w:t>1.1 Policy Objective 1</w:t></w:r></w:p>
+ </w:body>
+</w:document>"""
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("word/styles.xml", styles)
+        archive.writestr("word/document.xml", document)
+
+
+def test_a_table_of_contents_is_dropped(tmp_path: Path):
+    """Its page numbers point at a pagination that no longer exists."""
+    from tsp.office import blocks_to_markdown, read_office
+
+    source = tmp_path / "localised.docx"
+    _write_docx_with_styles(source)
+    text = blocks_to_markdown(read_office(source))
+    assert "1. Selected policy objectives 5" not in text
+    assert "# 1. Selected policy objectives" in text
+
+
+def test_a_layout_table_is_walked_into_rather_than_flattened(tmp_path: Path):
+    """Commission templates put whole sections inside a one-cell table. Reading
+    that as a data row turned a chapter into a single 59,000-character line."""
+    import zipfile
+
+    from tsp.office import read_office
+
+    body = "".join(
+        f"<w:p><w:r><w:t>Paragraph {n} of the section. {'text ' * 40}</w:t></w:r></w:p>"
+        for n in range(6)
+    )
+    document = f"""<?xml version="1.0"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+ <w:body><w:tbl><w:tr><w:tc>{body}</w:tc></w:tr></w:tbl></w:body>
+</w:document>"""
+    source = tmp_path / "layout.docx"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("word/document.xml", document)
+
+    blocks = read_office(source)
+    assert not [block for block in blocks if block.kind == "table"]
+    assert len([block for block in blocks if block.kind == "body"]) == 6
+
+
+def test_a_short_celled_table_stays_a_table(tmp_path: Path):
+    import zipfile
+
+    from tsp.office import read_office
+
+    rows = "".join(
+        "<w:tr>"
+        + "".join(f"<w:tc><w:p><w:r><w:t>{cell}</w:t></w:r></w:p></w:tc>" for cell in row)
+        + "</w:tr>"
+        for row in [("Region", "R&amp;D"), ("Bratislavsky", "1.82"), ("Zapadne", "0.61")]
+    )
+    document = f"""<?xml version="1.0"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+ <w:body><w:tbl>{rows}</w:tbl></w:body>
+</w:document>"""
+    source = tmp_path / "data.docx"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("word/document.xml", document)
+
+    tables = [block for block in read_office(source) if block.kind == "table"]
+    assert len(tables) == 1
+    assert tables[0].rows[0] == ["Region", "R&D"]
+
+
+# -- releasing ------------------------------------------------------------
+
+
+def test_the_release_workflow_refuses_a_version_that_disagrees():
+    """Publishing 0.4.0 while the package says 0.3.0 would ship a lie, so the
+    workflow compares the three places a version is written."""
+    release = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
+    assert "pyproject.toml" in release
+    assert "src/tsp/__init__.py" in release
+    assert "CHANGELOG.md" in release
+
+
+def test_the_release_workflow_runs_the_tests_first():
+    yaml = pytest.importorskip("yaml")
+
+    spec = yaml.safe_load((WORKFLOWS / "release.yml").read_text(encoding="utf-8"))
+    assert spec["jobs"]["test"]["uses"].endswith("test.yml")
+    assert "test" in spec["jobs"]["publish"]["needs"]
+
+    tests = yaml.safe_load((WORKFLOWS / "test.yml").read_text(encoding="utf-8"))
+    triggers = tests.get(True) or tests.get("on")
+    assert "workflow_call" in triggers, "the release workflow could not call it"
+
+
+def test_the_version_agrees_everywhere():
+    """The same check the release workflow makes, run on every commit so a
+    mismatch fails here rather than at publish time."""
+    root = Path(__file__).resolve().parent.parent
+    version = re.search(
+        r'^version = "([^"]+)"', (root / "pyproject.toml").read_text(), re.M
+    ).group(1)
+    package = re.search(
+        r'^__version__ = "([^"]+)"', (root / "src" / "tsp" / "__init__.py").read_text(), re.M
+    ).group(1)
+    assert package == version
+    assert f"## {version}" in (root / "CHANGELOG.md").read_text(encoding="utf-8")
