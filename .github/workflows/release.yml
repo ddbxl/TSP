@@ -1,0 +1,135 @@
+name: Release
+
+# A release goes out when the version in pyproject.toml changes on main, so the
+# trigger is a deliberate edit rather than every push. Tagging by hand still
+# works: pushing a v* tag runs the same job.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pyproject.toml"
+    tags-ignore:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      fresh: ${{ steps.read.outputs.fresh }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Read the version and see whether it is already released
+        id: read
+        run: |
+          version=$(python3 - <<'PY'
+          import re, pathlib
+          text = pathlib.Path("pyproject.toml").read_text()
+          match = re.search(r'^version = "([^"]+)"', text, re.M)
+          print(match.group(1) if match else "")
+          PY
+          )
+          if [ -z "$version" ]; then
+            echo "no version found in pyproject.toml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse "v$version" >/dev/null 2>&1; then
+            echo "v$version is tagged already, nothing to do"
+            echo "fresh=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$version is new"
+            echo "fresh=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check the version agrees with the package and the changelog
+        if: steps.read.outputs.fresh == 'yes'
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+
+          version = re.search(
+              r'^version = "([^"]+)"', pathlib.Path("pyproject.toml").read_text(), re.M
+          ).group(1)
+
+          package = re.search(
+              r'^__version__ = "([^"]+)"',
+              pathlib.Path("src/tsp/__init__.py").read_text(),
+              re.M,
+          ).group(1)
+          if package != version:
+              sys.exit(f"pyproject says {version}, the package says {package}")
+
+          changelog = pathlib.Path("CHANGELOG.md").read_text()
+          if f"## {version}" not in changelog:
+              sys.exit(f"CHANGELOG.md has no entry for {version}")
+
+          print(f"{version} agrees across pyproject, the package and the changelog")
+          PY
+
+  test:
+    needs: check
+    if: needs.check.outputs.fresh == 'yes'
+    uses: ./.github/workflows/test.yml
+
+  publish:
+    needs: [check, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to create the tag and the release
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Build the source and wheel archives
+        run: |
+          pip install build
+          python3 -m build
+          ls -la dist/
+
+      - name: Pull this version's notes out of the changelog
+        run: |
+          python3 - <<'PY'
+          import pathlib, re
+
+          version = "${{ needs.check.outputs.version }}"
+          changelog = pathlib.Path("CHANGELOG.md").read_text()
+          # Everything between this heading and the next one.
+          body = re.search(
+              rf"^## {re.escape(version)}\s*\n(.*?)(?=^## |\Z)",
+              changelog,
+              re.S | re.M,
+          )
+          notes = body.group(1).strip() if body else "See CHANGELOG.md."
+          pathlib.Path("RELEASE_NOTES.md").write_text(notes + "\n")
+          print(notes[:400])
+          PY
+
+      - name: Tag and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ needs.check.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$version" -m "TSP $version"
+          git push origin "v$version"
+          gh release create "v$version" \
+            --title "TSP $version" \
+            --notes-file RELEASE_NOTES.md \
+            dist/*
