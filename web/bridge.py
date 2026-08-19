@@ -13,8 +13,8 @@ from pathlib import Path
 from tsp.core import (
     Settings,
     estimate_tokens_from_chars,
+    process_document,
     prepare_page_text,
-    process_pdf,
     tesseract_available,
 )
 
@@ -158,7 +158,7 @@ def tsp_process(name, threshold_pct, dpi, tables, figures, report, ocr_json=None
         chart_regions=bool(figures),
         output_dir=WORK / "out",
     )
-    result = process_pdf(
+    result = process_document(
         WORK / "in" / name,
         settings,
         progress=lambda done, total: report(done, total),

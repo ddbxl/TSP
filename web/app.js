@@ -10,6 +10,7 @@
 
 const WORKER_URL = new URL("./worker.js", import.meta.url);
 const CORE_URL = new URL("./tsp_core.py", import.meta.url);
+const OFFICE_URL = new URL("./tsp_office.py", import.meta.url);
 const BRIDGE_URL = new URL("./bridge.py", import.meta.url);
 
 /* Output keeps the source name with a marker in front, so an optimised copy
@@ -59,6 +60,16 @@ function flash(button, word) {
     button.disabled = false;
   }, 1500);
 }
+
+/* Everything the engine reads. PyMuPDF handles the paged and image formats;
+   Word and OpenDocument are read from their XML by the standard library. */
+const READS = [
+  ".pdf", ".xps", ".epub", ".mobi", ".fb2", ".cbz", ".svg",
+  ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".tif", ".pnm", ".ppm", ".pgm",
+  ".docx", ".odt",
+  ".txt", ".md", ".markdown",
+];
+const READABLE = new RegExp(`(${READS.join("|").replace(/\./g, "\\.")})$`, "i");
 
 const MODES = [
   { label: "Text documents (5%)", value: 5 },
@@ -212,6 +223,7 @@ function boot() {
   if (!worker) spawn();
   booting = ask("boot", {
     coreUrl: CORE_URL.href,
+    officeUrl: OFFICE_URL.href,
     bridgeUrl: BRIDGE_URL.href,
   }).then((answer) => {
     booted = true;
@@ -430,7 +442,7 @@ function addFiles(files) {
   const known = new Set(queue.map((e) => `${e.file.name}:${e.file.size}`));
   let added = 0;
   for (const file of files) {
-    if (!/\.pdf$/i.test(file.name)) continue;
+    if (!READABLE.test(file.name)) continue;
     const key = `${file.name}:${file.size}`;
     if (known.has(key)) continue;
     known.add(key);

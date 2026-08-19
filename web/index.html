@@ -18,8 +18,8 @@
   <div>
     <h1>Token Saving Protocol</h1>
     <p class="standfirst">
-      PDFs in, compact text out. Pages that carry their meaning in charts come
-      back as images instead. Your files stay on this machine.
+      Documents in, compact markdown out. Pages that carry their meaning in
+      charts come back as images instead. Your files stay on this machine.
     </p>
   </div>
 </header>
@@ -35,10 +35,11 @@
     <h2 id="queue-heading" class="label">Documents</h2>
 
     <div id="drop" class="drop" tabindex="0" role="button"
-         aria-label="Choose PDFs, or drop them here">
-      <p class="drop__line">Drop PDFs here, or <span class="drop__link">choose files</span></p>
-      <p class="drop__note">Read locally, never uploaded</p>
-      <input id="picker" type="file" accept="application/pdf" multiple hidden>
+         aria-label="Choose documents, or drop them here">
+      <p class="drop__line">Drop documents here, or <span class="drop__link">choose files</span></p>
+      <p class="drop__note">PDF, images, Word, OpenDocument. Read locally, never uploaded</p>
+      <input id="picker" type="file" multiple hidden
+             accept=".pdf,.xps,.epub,.mobi,.fb2,.cbz,.svg,.png,.jpg,.jpeg,.bmp,.gif,.tiff,.tif,.docx,.odt,.txt,.md">
     </div>
 
     <div id="bulk" class="bulk" hidden>

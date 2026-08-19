@@ -68,7 +68,7 @@ async function fetchText(url, what) {
   return response.text();
 }
 
-async function boot(coreUrl, bridgeUrl) {
+async function boot(coreUrl, officeUrl, bridgeUrl) {
   if (pyodide) return;
 
   say("status", { state: "loading", text: "Downloading Python runtime, about 10 MB" });
@@ -83,14 +83,16 @@ async function boot(coreUrl, bridgeUrl) {
   const route = await installPyMuPDF();
 
   say("status", { state: "loading", text: "Loading the TSP engine" });
-  const [engine, bridge] = await Promise.all([
+  const [engine, office, bridge] = await Promise.all([
     fetchText(coreUrl, "tsp_core.py"),
+    fetchText(officeUrl, "tsp_office.py"),
     fetchText(bridgeUrl, "bridge.py"),
   ]);
 
   pyodide.FS.mkdirTree("/lib/tsp");
   pyodide.FS.writeFile("/lib/tsp/__init__.py", "");
   pyodide.FS.writeFile("/lib/tsp/core.py", engine);
+  pyodide.FS.writeFile("/lib/tsp/office.py", office);
   pyodide.FS.mkdirTree("/work/in");
   pyodide.FS.mkdirTree("/work/out");
 
@@ -148,7 +150,7 @@ self.onmessage = async (event) => {
   try {
     switch (type) {
       case "boot":
-        reply(id, { text: await boot(message.coreUrl, message.bridgeUrl) });
+        reply(id, { text: await boot(message.coreUrl, message.officeUrl, message.bridgeUrl) });
         break;
       case "process":
         process(message);

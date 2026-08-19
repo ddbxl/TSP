@@ -2,9 +2,22 @@
 
 Versions follow [Semantic Versioning](https://semver.org).
 
-## 0.3.0
+## 0.4.0
 
 ### Added
+
+- Word and OpenDocument files, read from their XML by the standard library, so
+  it works in the browser too. Headings, paragraphs, lists and tables come
+  through as markdown, and because both formats state their structure there is
+  nothing to detect: a table is exact and a running header never reaches the
+  body.
+- Images: `.png`, `.jpg`, `.tiff`, `.bmp` and `.gif` open as a one-page document
+  with no text layer, which is the shape the scanned-page check already looks
+  for, so OCR reads them.
+- `.epub`, `.mobi`, `.fb2`, `.xps`, `.cbz` and `.svg`, which the same reader
+  opens, and `.txt` and `.md`, which pass through the cleaner.
+- `tsp --formats` lists what will be read. The file pickers accept all of it, and
+  a test fails if the page turns away something the engine could have handled.
 
 - One control for every document, in the browser and in the window: a row above
   the list sets the mode, Tables and Figures for the whole queue. It reads Mixed
@@ -69,6 +82,9 @@ Versions follow [Semantic Versioning](https://semver.org).
   request the page cannot settle fails the build rather than reaching the site.
 
 ### Fixed
+
+- Two files sharing a stem, `report.docx` and `report.odt` say, wrote over each
+  other's output. The suffix joins the folder name only when that would happen.
 
 - The test workflow declared no permissions, so its token inherited the
   repository default, which on repositories created before February 2023 is read

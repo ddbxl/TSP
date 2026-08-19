@@ -3,8 +3,8 @@
 **[Open it in your browser](https://ddbxl.github.io/TSP/)**, or install it and
 work from the desktop.
 
-Feed TSP a PDF and get back compact text, plus images of the pages that carry
-their meaning in charts rather than words. Your files stay on your machine.
+Feed TSP a document and get back compact markdown, plus images of the pages that
+carry their meaning in charts rather than words. Your files stay on your machine.
 
 A 90-page report repeats its header on 90 pages, its footer on 90 pages, and
 sets its quotation marks in curly glyphs that cost two tokens each. You pay for
@@ -93,6 +93,33 @@ tsp report.pdf --keep-headers       # leave running headers alone
 ```
 
 `tsp --help` lists the rest.
+
+## What it reads
+
+Everything comes out as one `.md` file.
+
+| | |
+|---|---|
+| **PDF** | The main path: page markers, tables, figures, scanned pages |
+| **Word and OpenDocument** | `.docx`, `.odt` |
+| **Images** | `.png`, `.jpg`, `.tiff`, `.bmp`, `.gif`, read through OCR |
+| **Books and pages** | `.epub`, `.mobi`, `.fb2`, `.xps`, `.cbz`, `.svg` |
+| **Plain text** | `.txt`, `.md` |
+
+`tsp --formats` lists them.
+
+A Word or OpenDocument file goes down a different path, and a better one. Both
+are a zip of XML, so the standard library reads them and everything TSP has to
+guess at in a PDF is stated outright: a heading carries a style name rather than
+a font size, a table is an element rather than a grid of ruled lines, and running
+headers live in a separate part of the file so they never enter the body at all.
+No detection, no thresholds, no judgement.
+
+Those formats have no pages, so page markers, the image threshold and the
+scanned-page check do not apply to them.
+
+Old `.doc` is not read. It is a binary format needing LibreOffice or `antiword`,
+and it cannot be read in a browser at all. Save as `.docx`.
 
 ## Modes
 

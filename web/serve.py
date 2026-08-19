@@ -22,10 +22,13 @@ PORT = 8000
 
 
 def stage() -> None:
-    engine = ROOT / "src" / "tsp" / "core.py"
-    if not engine.is_file():
-        sys.exit(f"engine missing at {engine}")
-    shutil.copy2(engine, WEB / "tsp_core.py")
+    for source, staged in (
+        (ROOT / "src" / "tsp" / "core.py", "tsp_core.py"),
+        (ROOT / "src" / "tsp" / "office.py", "tsp_office.py"),
+    ):
+        if not source.is_file():
+            sys.exit(f"engine missing at {source}")
+        shutil.copy2(source, WEB / staged)
 
     # bridge.py already lives in web/, so only the engine needs staging.
     for name in ("icon.svg", "favicon.png"):

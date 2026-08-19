@@ -9,6 +9,7 @@ The fixture builds its own PDF, so the suite needs no sample files.
 from __future__ import annotations
 
 import io
+import re
 import sys
 from pathlib import Path
 
@@ -932,3 +933,156 @@ def test_no_job_gets_write_access_it_does_not_use():
     assert spec["permissions"] == {"contents": "read"}
     for job in spec["jobs"].values():
         assert "permissions" not in job, "a test job needs no more than read"
+
+
+# -- other kinds of document ---------------------------------------------
+
+
+def _docx(path: Path) -> Path:
+    """A Word file with a heading, prose, a table and a running header."""
+    docx = pytest.importorskip("docx")
+    document = docx.Document()
+    section = document.sections[0]
+    section.header.paragraphs[0].text = "Country Report 2026"
+    section.footer.paragraphs[0].text = "Page X of 12"
+    document.add_heading("3.1 Priority domain assessment", level=2)
+    document.add_paragraph("Regional authorities identify priority domains.")
+    table = document.add_table(rows=3, cols=3)
+    for row, values in enumerate(
+        [("Region", "R&D", "Patents"), ("Bratislavsky", "1.82", "412"),
+         ("Zapadne", "0.61", "97")]
+    ):
+        for column, value in enumerate(values):
+            table.cell(row, column).text = value
+    document.save(path)
+    return path
+
+
+def test_a_word_file_becomes_markdown(tmp_path: Path):
+    from tsp.core import process_document
+
+    result = process_document(
+        _docx(tmp_path / "report.docx"), Settings(output_dir=tmp_path)
+    )
+    text = result.text_path.read_text(encoding="utf-8")
+    assert result.ok
+    assert result.text_path.suffix == ".md"
+    assert "## 3.1 Priority domain assessment" in text
+    assert "Regional authorities identify priority domains." in text
+
+
+def test_a_word_table_needs_no_guesswork(tmp_path: Path):
+    """The file states its table, so the grid is exact rather than judged."""
+    from tsp.core import process_document
+
+    text = process_document(
+        _docx(tmp_path / "report.docx"), Settings(output_dir=tmp_path)
+    ).text_path.read_text(encoding="utf-8")
+    assert "|Region|R&D|Patents|" in text
+    assert "|Bratislavsky|1.82|412|" in text
+
+
+def test_a_word_header_never_reaches_the_body(tmp_path: Path):
+    """Headers live in their own part of the file, so no frequency test has to
+    find them."""
+    from tsp.core import process_document
+
+    text = process_document(
+        _docx(tmp_path / "report.docx"), Settings(output_dir=tmp_path)
+    ).text_path.read_text(encoding="utf-8")
+    assert "Country Report 2026" not in text
+    assert "Page X of 12" not in text
+
+
+def test_an_opendocument_file_becomes_markdown(tmp_path: Path):
+    odf = pytest.importorskip("odf.opendocument")
+    from odf.text import H, P
+    from odf.table import Table, TableRow, TableCell
+    from tsp.core import process_document
+
+    document = odf.OpenDocumentText()
+    document.text.addElement(H(outlinelevel=2, text="3.1 Priority domains"))
+    document.text.addElement(P(text="Regional authorities identify domains."))
+    table = Table(name="Indicators")
+    for values in [("Region", "R&D"), ("Bratislavsky", "1.82")]:
+        row = TableRow()
+        for value in values:
+            cell = TableCell()
+            cell.addElement(P(text=value))
+            row.addElement(cell)
+        table.addElement(row)
+    document.text.addElement(table)
+    path = tmp_path / "report.odt"
+    document.save(path)
+
+    text = process_document(path, Settings(output_dir=tmp_path)).text_path.read_text(
+        encoding="utf-8"
+    )
+    assert "## 3.1 Priority domains" in text
+    assert "|Region|R&D|" in text
+
+
+def test_an_image_is_read_as_a_page_with_no_text(tmp_path: Path):
+    """An image opens as a one-page document, which is the shape the scanned
+    page check already looks for."""
+    from tsp.core import process_document
+
+    Image = pytest.importorskip("PIL.Image")
+    picture = tmp_path / "screenshot.png"
+    Image.new("RGB", (600, 400), "white").save(picture)
+
+    result = process_document(picture, Settings(output_dir=tmp_path))
+    assert result.ok
+    assert result.pages == 1
+    assert result.scanned_pages == 1
+
+
+def test_plain_text_passes_through_the_cleaner(tmp_path: Path):
+    from tsp.core import process_document
+
+    source = tmp_path / "notes.txt"
+    source.write_text("author-\nities said \u201cyes\u201d", encoding="utf-8")
+    text = process_document(source, Settings(output_dir=tmp_path)).text_path.read_text(
+        encoding="utf-8"
+    )
+    assert "authorities" in text and '"yes"' in text
+
+
+def test_two_files_sharing_a_stem_keep_their_own_output(tmp_path: Path):
+    """report.docx and report.odt would otherwise write over each other."""
+    odf = pytest.importorskip("odf.opendocument")
+    from odf.text import P
+    from tsp.core import process_document
+
+    _docx(tmp_path / "report.docx")
+    document = odf.OpenDocumentText()
+    document.text.addElement(P(text="From the OpenDocument file."))
+    document.save(tmp_path / "report.odt")
+
+    out = tmp_path / "out"
+    first = process_document(tmp_path / "report.docx", Settings(output_dir=out))
+    second = process_document(tmp_path / "report.odt", Settings(output_dir=out))
+
+    assert first.text_path != second.text_path
+    assert "From the OpenDocument file." in second.text_path.read_text(encoding="utf-8")
+    assert "Priority domain assessment" in first.text_path.read_text(encoding="utf-8")
+
+
+def test_reprocessing_one_file_reuses_its_own_folder(tmp_path: Path):
+    from tsp.core import process_document
+
+    source = _docx(tmp_path / "report.docx")
+    out = tmp_path / "out"
+    first = process_document(source, Settings(output_dir=out))
+    again = process_document(source, Settings(output_dir=out))
+    assert first.text_path == again.text_path
+
+
+def test_the_browser_accepts_what_the_engine_reads():
+    """A file the page refuses to take is a file the engine could have read."""
+    from tsp.core import SUPPORTED_SUFFIXES
+
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    listed = set(re.findall(r'"(\.[a-z0-9]+)"', app.split("const READS = [")[1].split("];")[0]))
+    missing = SUPPORTED_SUFFIXES - listed
+    assert not missing, f"the page turns away {sorted(missing)}"

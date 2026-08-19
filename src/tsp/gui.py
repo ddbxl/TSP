@@ -19,7 +19,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from .core import MODES, Result, Settings, process_pdf, tesseract_available
+from .core import (
+    MODES,
+    SUPPORTED_SUFFIXES,
+    Result,
+    Settings,
+    process_document,
+    tesseract_available,
+)
 
 APP_NAME = "TSP - Token Saving Protocol"
 
@@ -324,8 +331,16 @@ class App:
     # -- queue ------------------------------------------------------------
 
     def add_files(self) -> None:
+        patterns = " ".join(f"*{suffix}" for suffix in sorted(SUPPORTED_SUFFIXES))
         paths = filedialog.askopenfilenames(
-            title="Select PDFs", filetypes=[("PDF files", "*.pdf")]
+            title="Select documents",
+            filetypes=[
+                ("Everything TSP reads", patterns),
+                ("PDF", "*.pdf"),
+                ("Word and OpenDocument", "*.docx *.odt"),
+                ("Images", "*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.gif"),
+                ("All files", "*.*"),
+            ],
         )
         known = {os.path.normcase(os.path.realpath(i.path)) for i in self.items}
         added = 0
@@ -525,7 +540,7 @@ class App:
             def progress(done: int, total: int, i=index) -> None:
                 self.messages.put(("page", i, done, total))
 
-            result = process_pdf(
+            result = process_document(
                 path,
                 settings,
                 progress=progress,

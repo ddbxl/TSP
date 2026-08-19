@@ -13,7 +13,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .core import Settings, process_pdf, tesseract_available
+from .core import SUPPORTED_SUFFIXES, Settings, process_document, tesseract_available
 
 BANNER = "TSP - Token Saving Protocol"
 
@@ -21,9 +21,15 @@ BANNER = "TSP - Token Saving Protocol"
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tsp",
-        description="Extract PDFs into token-efficient text plus page images.",
+        description="Turn documents into token-efficient markdown.",
     )
-    parser.add_argument("pdfs", nargs="+", type=Path, help="one or more PDF files")
+    parser.add_argument(
+        "files",
+        nargs="*",
+        type=Path,
+        metavar="FILE",
+        help="PDFs, images, Word or OpenDocument files, or plain text",
+    )
     parser.add_argument(
         "-t",
         "--threshold",
@@ -87,11 +93,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="keep curly quotes, en dashes and ligatures as they appear",
     )
     parser.add_argument("-q", "--quiet", action="store_true", help="errors only")
+    parser.add_argument(
+        "--formats",
+        action="store_true",
+        help="list the file types TSP will read, then exit",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.formats:
+        print(" ".join(sorted(SUPPORTED_SUFFIXES)))
+        return 0
 
     if args.ocr and not tesseract_available():
         print(
@@ -122,10 +137,10 @@ def main(argv: list[str] | None = None) -> int:
     tokens_in = tokens_out = 0
     scans_unread = 0
 
-    for pdf in args.pdfs:
+    for pdf in args.files:
         if not args.quiet:
             print(f"-> {pdf.name}", flush=True)
-        result = process_pdf(pdf, settings)
+        result = process_document(pdf, settings)
         tokens_in += result.tokens_in
         tokens_out += result.tokens_out
 
@@ -137,9 +152,8 @@ def main(argv: list[str] | None = None) -> int:
                 if result.ocr_pages:
                     extra += f", {result.ocr_pages} by OCR"
                 print(
-                    f"   {result.pages} pages, {result.images_saved} images"
-                    f"{extra}, ~{result.tokens_out:,} tokens "
-                    f"({result.saving:.0%} lighter) -> {result.text_path}"
+                    f"   {result.message} ({result.saving:.0%} lighter)"
+                    f" -> {result.text_path}"
                 )
             for warning in result.warnings:
                 print(f"   warning: {warning}", file=sys.stderr)
@@ -147,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
             failures += 1
             print(f"   failed: {result.message}", file=sys.stderr)
 
-    if not args.quiet and len(args.pdfs) > 1:
+    if not args.quiet and len(args.files) > 1:
         saved = tokens_in - tokens_out
         print(f"\ntotal: ~{tokens_out:,} tokens, ~{saved:,} removed")
 

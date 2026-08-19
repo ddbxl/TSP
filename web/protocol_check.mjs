@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKER = resolve(HERE, "worker.js");
 const BRIDGE = resolve(HERE, "bridge.py");
+const OFFICE = resolve(HERE, "..", "src", "tsp", "office.py");
 const ENGINE = resolve(HERE, "..", "src", "tsp", "core.py");
 const PDF = process.argv[2];
 const WHEEL = process.env.TSP_WHEEL || "";
@@ -36,8 +37,13 @@ const sandbox = {
   },
   importScripts: () => { sandbox.self.loadPyodide = loadPyodide; },
   fetch: async (url) => {
-    const map = { core: ENGINE, bridge: BRIDGE };
-    const key = String(url).includes("bridge") ? "bridge" : "core";
+    const map = { core: ENGINE, office: OFFICE, bridge: BRIDGE };
+    const target = String(url);
+    const key = target.includes("bridge")
+      ? "bridge"
+      : target.includes("office")
+        ? "office"
+        : "core";
     return { ok: true, text: async () => readFileSync(map[key], "utf8"), json: async () => ({}) };
   },
   console,
@@ -78,7 +84,7 @@ function ask(type, payload = {}) {
   });
 }
 
-const boot = await ask("boot", { coreUrl: "x/tsp_core.py", bridgeUrl: "x/bridge.py" });
+const boot = await ask("boot", { coreUrl: "x/tsp_core.py", officeUrl: "x/tsp_office.py", bridgeUrl: "x/bridge.py" });
 console.log("boot ->", boot.text.replace(/via.*/, "via <route>"));
 
 const proc = await ask("process", {

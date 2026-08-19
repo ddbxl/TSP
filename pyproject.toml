@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tsp-token-saving-protocol"
-version = "0.3.0"
+version = "0.4.0"
 description = "Turn PDFs into token-efficient text plus page images, entirely offline."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
-keywords = ["pdf", "llm", "tokens", "text-extraction", "ocr-free"]
+keywords = ["pdf", "docx", "odt", "llm", "tokens", "text-extraction", "markdown"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: X11 Applications",

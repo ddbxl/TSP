@@ -32,3 +32,4 @@ _site/
 # Node, only needed to run web/protocol_check.mjs
 node_modules/
 package-lock.json
+web/tsp_office.py

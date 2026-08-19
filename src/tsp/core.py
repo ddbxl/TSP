@@ -26,6 +26,8 @@ except ImportError:  # pragma: no cover
 
 __all__ = [
     "Settings",
+    "SUPPORTED_SUFFIXES",
+    "process_document",
     "prepare_page_text",
     "PageStat",
     "Result",
@@ -722,6 +724,110 @@ def _assemble_page(
 ProgressCb = Callable[[int, int], None]
 
 
+# What TSP will open. PyMuPDF handles the first two groups; the office formats
+# are read by tsp.office, which needs nothing beyond the standard library.
+PAGED_SUFFIXES = {".pdf", ".xps", ".epub", ".mobi", ".fb2", ".cbz", ".svg"}
+IMAGE_SUFFIXES = {
+    ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".tif", ".pnm", ".ppm", ".pgm"
+}
+TEXT_SUFFIXES = {".txt", ".md", ".markdown"}
+SUPPORTED_SUFFIXES = (
+    PAGED_SUFFIXES | IMAGE_SUFFIXES | TEXT_SUFFIXES | {".docx", ".odt"}
+)
+
+
+def process_document(
+    path: str | os.PathLike[str],
+    settings: Settings | None = None,
+    progress: ProgressCb | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+    supplied_text: Mapping[int, str] | None = None,
+) -> Result:
+    """Turn any supported file into markdown, choosing the reader by suffix."""
+    source = Path(path)
+    suffix = source.suffix.lower()
+
+    if suffix in {".docx", ".odt"}:
+        return _process_office(source, settings or Settings(), progress)
+    if suffix in TEXT_SUFFIXES:
+        return _process_plain(source, settings or Settings(), progress)
+    return process_pdf(path, settings, progress, is_cancelled, supplied_text)
+
+
+def _write_result(
+    result: Result, source: Path, settings: Settings, body: str, note: str
+) -> Result:
+    """Shared tail for the readers that produce one body of text."""
+    out_dir = Path(settings.output_dir) if settings.output_dir else source.parent
+    target = _target_dir(source, out_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    if settings.clean_target:
+        _clear_previous(target, source.stem)
+
+    result.text_path = target / f"{source.stem}.md"
+    result.text_path.write_text(f"# {source.name}\n\n{body}\n", encoding="utf-8")
+    result.chars_out = len(body)
+    result.page_stats = [
+        PageStat(number=1, chars=len(body), visual=False, blank=not body)
+    ]
+    result.pages = 0  # these formats have no pages
+    result.message = f"{note}, ~{result.tokens_out:,} tokens"
+
+    if settings.write_manifest:
+        _write_manifest(target / "MANIFEST.txt", result, settings, set())
+    return result
+
+
+def _process_office(source: Path, settings: Settings, progress) -> Result:
+    from .office import blocks_to_markdown, read_office
+
+    result = Result(source=source)
+    if not source.is_file():
+        result.ok = False
+        result.message = f"File not found: {source}"
+        return result
+    try:
+        if progress:
+            progress(0, 1)
+        blocks = read_office(source)
+        raw = blocks_to_markdown(blocks)
+        result.chars_in = len(raw)
+        body = clean_text(raw, settings)
+        tables = sum(1 for block in blocks if block.kind == "table")
+        result.page_stats = []
+        note = f"{len(blocks)} blocks"
+        if tables:
+            note += f", {tables} tables"
+        if progress:
+            progress(1, 1)
+        return _write_result(result, source, settings, body, note)
+    except Exception as exc:
+        result.ok = False
+        result.message = f"Could not read {source.name}: {exc}"
+        return result
+
+
+def _process_plain(source: Path, settings: Settings, progress) -> Result:
+    result = Result(source=source)
+    if not source.is_file():
+        result.ok = False
+        result.message = f"File not found: {source}"
+        return result
+    try:
+        if progress:
+            progress(0, 1)
+        raw = source.read_text(encoding="utf-8", errors="replace")
+        result.chars_in = len(raw)
+        body = clean_text(raw, settings)
+        if progress:
+            progress(1, 1)
+        return _write_result(result, source, settings, body, "plain text")
+    except Exception as exc:
+        result.ok = False
+        result.message = f"Could not read {source.name}: {exc}"
+        return result
+
+
 def process_pdf(
     pdf_path: str | os.PathLike[str],
     settings: Settings | None = None,
@@ -748,7 +854,7 @@ def process_pdf(
         return result
 
     out_dir = Path(settings.output_dir) if settings.output_dir else source.parent
-    target = out_dir / f"{source.stem}_TSP"
+    target = _target_dir(source, out_dir)
 
     doc = None
     try:
@@ -993,6 +1099,25 @@ def process_pdf(
                 doc.close()
             except Exception:
                 pass
+
+
+def _target_dir(source: Path, out_dir: Path) -> Path:
+    """Where a document's output goes.
+
+    Two files sharing a stem, report.docx and report.odt say, would otherwise
+    write over each other. The suffix joins the folder name only when that
+    would happen, so the common case stays tidy.
+    """
+    base = out_dir / f"{source.stem}_TSP"
+    manifest = base / "MANIFEST.txt"
+    if manifest.is_file():
+        try:
+            first = manifest.read_text(encoding="utf-8").split("\n", 1)[0]
+        except OSError:
+            return base
+        if first.startswith("source: ") and first[8:].strip() != source.name:
+            return out_dir / f"{source.stem}_{source.suffix.lstrip('.')}_TSP"
+    return base
 
 
 def _clear_previous(target: Path, stem: str) -> None:
