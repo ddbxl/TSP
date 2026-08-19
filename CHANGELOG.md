@@ -89,6 +89,18 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- Word headings were missed whenever the author wrote in another language. The
+  style identifier was matched against the word "heading", so a Slovenian
+  document's `Naslov1` and `Naslov2` came through as plain paragraphs: 1 heading
+  found where 24 were present. Levels are read from the style definitions now,
+  which name themselves in English whatever the author's language.
+- A Word table holding whole sections was read as data, which turned a chapter
+  into a single 58,979-character row. Commission templates use one-cell tables as
+  layout frames, so a table whose cells run past 300 characters is walked into
+  instead. On a partnership agreement that took the longest line from 58,979
+  characters to 5,269, the rest being the document's own paragraphs.
+- A Word table of contents is dropped, since its page numbers point at a
+  pagination that no longer exists.
 - Two files sharing a stem, `report.docx` and `report.odt` say, wrote over each
   other's output. The suffix joins the folder name only when that would happen.
 
