@@ -63,13 +63,20 @@ function flash(button, word) {
 
 /* Everything the engine reads. PyMuPDF handles the paged and image formats;
    Word and OpenDocument are read from their XML by the standard library. */
-const READS = [
+const READS = new Set([
   ".pdf", ".xps", ".epub", ".mobi", ".fb2", ".cbz", ".svg",
   ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".tif", ".pnm", ".ppm", ".pgm",
   ".docx", ".odt",
   ".txt", ".md", ".markdown",
-];
-const READABLE = new RegExp(`(${READS.join("|").replace(/\./g, "\\.")})$`, "i");
+]);
+
+/* Compares the suffix against a set. Building a pattern out of these strings
+   would mean escaping them, and escaping is a thing to get wrong rather than a
+   thing to do. */
+function readable(name) {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 && READS.has(name.slice(dot).toLowerCase());
+}
 
 const MODES = [
   { label: "Text documents (5%)", value: 5 },
@@ -442,7 +449,7 @@ function addFiles(files) {
   const known = new Set(queue.map((e) => `${e.file.name}:${e.file.size}`));
   let added = 0;
   for (const file of files) {
-    if (!READABLE.test(file.name)) continue;
+    if (!readable(file.name)) continue;
     const key = `${file.name}:${file.size}`;
     if (known.has(key)) continue;
     known.add(key);

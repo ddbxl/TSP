@@ -89,6 +89,10 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- The browser built its list of readable suffixes into a regular expression,
+  escaping dots but not backslashes. The list is hardcoded and holds neither, so
+  nothing was exploitable, but the suffix is compared against a set now and no
+  pattern is built at all. Flagged by CodeQL as `js/incomplete-sanitization`.
 - Word headings were missed whenever the author wrote in another language. The
   style identifier was matched against the word "heading", so a Slovenian
   document's `Naslov1` and `Naslov2` came through as plain paragraphs: 1 heading

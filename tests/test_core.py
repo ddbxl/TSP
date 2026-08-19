@@ -1083,7 +1083,8 @@ def test_the_browser_accepts_what_the_engine_reads():
     from tsp.core import SUPPORTED_SUFFIXES
 
     app = (WEB / "app.js").read_text(encoding="utf-8")
-    listed = set(re.findall(r'"(\.[a-z0-9]+)"', app.split("const READS = [")[1].split("];")[0]))
+    block = app.split("const READS = new Set([")[1].split("]);")[0]
+    listed = set(re.findall(r'"(\.[a-z0-9]+)"', block))
     missing = SUPPORTED_SUFFIXES - listed
     assert not missing, f"the page turns away {sorted(missing)}"
 
@@ -1226,3 +1227,15 @@ def test_the_version_agrees_everywhere():
     ).group(1)
     assert package == version
     assert f"## {version}" in (root / "CHANGELOG.md").read_text(encoding="utf-8")
+
+
+def test_the_suffix_check_builds_no_pattern():
+    """Escaping strings into a regex is a thing to get wrong. CodeQL flagged a
+    version of this that escaped dots and not backslashes."""
+    for name in ("app.js", "worker.js"):
+        source = (WEB / name).read_text(encoding="utf-8")
+        assert "new RegExp" not in source, f"{name} builds a pattern at runtime"
+
+    app = (WEB / "app.js").read_text(encoding="utf-8")
+    assert "const READS = new Set(" in app
+    assert "function readable(name)" in app
