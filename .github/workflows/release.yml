@@ -1,8 +1,8 @@
 name: Release
 
 # A release goes out when the version in pyproject.toml changes on main, so the
-# trigger is a deliberate edit rather than every push. Tagging by hand still
-# works: pushing a v* tag runs the same job.
+# trigger is a deliberate edit. Every push would be too often. Tagging by hand
+# still works: pushing a v* tag runs the same job.
 on:
   push:
     branches: [main]

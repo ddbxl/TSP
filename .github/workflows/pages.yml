@@ -11,8 +11,8 @@ on:
   workflow_dispatch:
 
 # The build job only reads the repository. Writing to Pages is scoped to the
-# job that deploys, since a job-level block replaces this one rather than
-# adding to it.
+# job that deploys. A job-level block replaces this one, so it restates the
+# read access it needs.
 permissions:
   contents: read
 
@@ -42,8 +42,8 @@ jobs:
       - name: Check every web file reached the site
         run: |
           # Catches a new file in web/ that nobody remembered to copy. Local
-          # tooling is named here so it is skipped on purpose rather than by a
-          # glob that happens not to match it.
+          # tooling is named here so it is skipped on purpose. A glob would
+          # skip it by accident.
           missing=0
           for f in web/*; do
             name=$(basename "$f")
