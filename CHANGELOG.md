@@ -12,16 +12,15 @@ Versions follow [Semantic Versioning](https://semver.org).
   characters a page with pictures over 74% of it against a Commission report's
   3,556 characters and no raster at all. It flags a missing text layer for OCR,
   and reports charts without turning Figures on, since replacing a table with a
-  picture is a choice to make rather than one to inherit.
-- A self-contained HTML copy, written beside the markdown rather than instead of
-  it. Tables render, and page images are carried inside the file as data URIs so
+  picture is a choice to make for yourself.
+- A self-contained HTML copy, written beside the markdown. The markdown stays. Tables render, and page images are carried inside the file as data URIs so
   it survives being emailed. `--html`, or the output control in the interfaces.
   It costs about 6% more tokens than the markdown, so it is for reading.
 
 ### Fixed
 
-- A page rendered whole is named in its page marker rather than on a line of its
-  own, so a slide deck's HTML arrived with no pictures in it.
+- A page rendered whole is named in its page marker, never on a line of its own,
+  so a slide deck's HTML arrived with no pictures in it.
 
 ## 0.4.1
 
@@ -74,7 +73,7 @@ Versions follow [Semantic Versioning](https://semver.org).
   and reported, in the summary, the manifest and the interface.
 - OCR for those pages through PyMuPDF's Tesseract bridge, about 1.4 seconds a
   page. `--ocr` on the command line, a toggle in the window, and disabled when
-  Tesseract is absent. The browser recommends OCRmyPDF instead.
+  Tesseract is absent. The browser points at OCRmyPDF.
 - Table extraction as markdown grids, off by default. `--tables` or a per-file
   checkbox. Blocks inside a table are replaced by the grid, so contents appear
   once.
@@ -97,9 +96,9 @@ Versions follow [Semantic Versioning](https://semver.org).
   a zip nor unpacking. The zip stays for page images and batches.
 - Per-document actions on each finished row: copy its text, download its text,
   and download its own files as a zip when it produced page images.
-- The batch actions sit directly under the documents rather than below the token
-  meter, and read "all" so they cannot be mistaken for the buttons on the rows
-  above.
+- The batch actions sit directly under the documents, and read "all" so they
+  cannot be mistaken for the buttons on the rows above. They used to sit below
+  the token meter, a scroll away.
 - Downloads are named after the source with a marker in front,
   `optimised_<source>.txt` and `optimised_<source>.zip`, so an optimised copy
   sorts beside its original.
@@ -107,10 +106,10 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 ### Changed
 
-- Output is markdown, `<name>.md` rather than `<name>.txt`, so tables render
+- Output is markdown, `<name>.md`, so tables render
   wherever the file is opened. The markup stays minimal: nothing is invented
   where a PDF cannot say what it meant.
-- The browser engine loads as the page opens instead of waiting for a button.
+- The browser engine loads as the page opens. No button to press.
   It runs on a worker thread, so the download costs the interface nothing. A
   connection the browser reports as metered or very slow still waits, and
   choosing a file starts it either way.
@@ -119,7 +118,7 @@ Versions follow [Semantic Versioning](https://semver.org).
   upload-pages-artifact v5, deploy-pages v5. All of them declare Node 24, which
   clears the Node 20 deprecation warning the older ones raised on each run.
 - Continuous integration runs the message-protocol check on Node 24, so a
-  request the page cannot settle fails the build rather than reaching the site.
+  request the page cannot settle fails the build, well before it reaches the site.
 
 ### Fixed
 
@@ -131,7 +130,7 @@ Versions follow [Semantic Versioning](https://semver.org).
 - A Word table holding whole sections was read as data, which turned a chapter
   into a single 58,979-character row. Commission templates use one-cell tables as
   layout frames, so a table whose cells run past 300 characters is walked into
-  instead. On a partnership agreement that took the longest line from 58,979
+  into. On a partnership agreement that took the longest line from 58,979
   characters to 5,269, the rest being the document's own paragraphs.
 - A Word table of contents is dropped, since its page numbers point at a
   pagination that no longer exists.
@@ -146,7 +145,7 @@ Versions follow [Semantic Versioning](https://semver.org).
 
 - Reading the scanned pages reprocessed the whole document. Three scanned pages
   in a 120-page report cost a full 4.2 s re-extraction of the other 117. The
-  recognised text is folded into the finished markdown instead, which takes 9 ms.
+  recognised text is folded into the finished markdown, which takes 9 ms.
   A run leaves notes beside its output, holding the running headers it found and
   each page's length, so the OCR step never opens the PDF again.
 - The engine exposes `prepare_page_text`, so text recognised outside it gets the
@@ -165,10 +164,10 @@ Versions follow [Semantic Versioning](https://semver.org).
   the worker and the core path are left to the library now, since it derives them
   from its own version and cannot disagree with itself.
 - A failure reported "no detail captured" and nothing else. tesseract.js rejects
-  with plain strings rather than Error objects, so reading `.message` off the
+  with plain strings, never Error objects, so reading `.message` off the
   rejection gave undefined. Every failure path normalises what it caught, an
   error handler is passed to the OCR engine so library errors are reachable
-  rather than thrown inside a message callback, and a failed start names the URLs
+  and no longer thrown inside a message callback, and a failed start names the URLs
   it used.
 - OCR in the browser failed with "createWorker is not a function". The
   tesseract.js ESM build carries a single default export and no named ones, so
@@ -180,14 +179,14 @@ Versions follow [Semantic Versioning](https://semver.org).
   serves both the table filter and the chart check.
 
 - A markdown grid touching prose or a page marker was read as a paragraph of
-  pipes rather than a table, which hit every table opening a page or sitting
+  pipes, which hit every table opening a page or sitting
   under a caption. Grids are padded with a blank line on each side and page
   markers stand alone. A test runs the output through a markdown parser and
   counts the header cells.
 - The browser hung after processing, with no download offered. The page matched
   replies to requests by name and had no entry for two of them, so a request
   waited for ever and everything after it stalled. Requests now carry an id the
-  worker echoes, a failed request rejects rather than hanging, a stopped worker
+  worker echoes, a failed request rejects, a stopped worker
   rejects whatever was outstanding, and `web/protocol_check.mjs` drives every
   request through the real worker to prove each one settles.
 - The download depended on the text step succeeding. The zip is offered first,
@@ -208,7 +207,7 @@ Versions follow [Semantic Versioning](https://semver.org).
   `display: flex` rule outweighed the `hidden` attribute.
 - Saving to a folder failed silently when Chrome refused the folder. Chrome
   reports a refused folder identically to a cancelled dialogue, so the page now
-  explains the likely cause instead of saying nothing.
+  explains the likely cause. It used to say nothing at all.
 - The Pages workflow copied web files by name and would have shipped a site
   without `worker.js`. It now copies the file and fails the build if any web
   file is missing from the artifact.
@@ -221,7 +220,7 @@ First release.
   removed, words rejoined across hyphenated line breaks, and curly quotes,
   dashes, ligatures and non-breaking spaces mapped to ASCII.
 - Page images for pages whose raster coverage or vector path count puts their
-  meaning in graphics rather than words.
+  meaning in graphics.
 - `MANIFEST.txt` per output folder recording pages, images, the lines removed
   and the token estimate before and after.
 - Desktop window, with work on a background thread and a Cancel button.

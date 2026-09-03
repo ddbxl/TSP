@@ -2,7 +2,7 @@
 
 Markdown is the cheaper output and the one to paste into a chat. This exists for
 reading and sending: a single file that opens anywhere, with the page images
-carried inside it rather than sitting in a folder beside it.
+carried inside it, so it survives being moved.
 
 Only the subset TSP writes is handled, so there is no markdown library here and
 nothing to install.
@@ -23,9 +23,8 @@ __all__ = ["to_html"]
 _HEADING = re.compile(r"^(#{1,6})\s+(.*)$")
 _LIST = re.compile(r"^-\s+(.*)$")
 _PAGE = re.compile(r"^---\s*(p\..*?)\s*---$")
-# A whole page rendered as a picture is named in its marker rather than on a
-# line of its own, so a slide deck would otherwise reach the HTML with no
-# pictures in it at all.
+# A whole page rendered as a picture is named in its marker. Without this a
+# slide deck reaches the HTML with no pictures in it at all.
 _SEEN = re.compile(r"see\s+(\S+\.(?:png|jpe?g))")
 _FIGURE = re.compile(r"^\[figure:\s*(\S+)\]$")
 _ROW = re.compile(r"^\|.*\|$")

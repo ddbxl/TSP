@@ -8,7 +8,7 @@ covered. Current as of August 2026, against PyMuPDF 1.28.0 and Pyodide 0.29.4.
 It works, and the browser runs the same `src/tsp/core.py` as the desktop app.
 Pyodide provides CPython compiled to WebAssembly, PyMuPDF now publishes a
 WebAssembly wheel to PyPI, and `web/app.js` fetches the engine from the
-deployment rather than reimplementing it. GitHub Pages serves the three static
+deployment, so nothing is reimplemented. GitHub Pages serves the three static
 files. PDFs stay in the tab.
 
 Tkinter has no WebAssembly path, so the desktop window cannot ship. The web
@@ -66,8 +66,8 @@ through older releases if the newest one lacks a wheel for the platform, so a
 PyMuPDF release that skips WebAssembly does not take the page down. Nothing is
 hardcoded to a version or a content hash.
 
-To pin the wheel instead, drop the `.whl` into `web/` and pass the relative
-path to `loadPackage`. Same-origin hosting sidesteps CORS and removes the PyPI
+To pin the wheel, drop the `.whl` into `web/` and pass the relative path to
+`loadPackage`. Same-origin hosting sidesteps CORS and removes the PyPI
 dependency, at the cost of 18 MB in the repository and on Pages bandwidth.
 
 ## Which PyMuPDF the browser gets
@@ -75,7 +75,7 @@ dependency, at the cost of 18 MB in the repository and on Pages bandwidth.
 Pyodide ships a curated distribution of several hundred packages, and PyMuPDF
 sits in it. `micropip.install("pymupdf")` resolves that lockfile before it
 considers PyPI, so Pyodide 0.29.4 installs PyMuPDF 1.26.3 from the same CDN as
-the runtime rather than 1.28.0 from PyPI.
+the runtime. PyPI's 1.28.0 is never consulted.
 
 That pairing is the tested one, and it keeps the download on a single origin.
 Every API the engine calls predates 1.26, so nothing breaks. Text extraction
@@ -84,8 +84,8 @@ which matters only when diffing browser output against desktop output on the
 same file.
 
 Forcing a version, `micropip.install("pymupdf==1.28.0")`, sends micropip to PyPI
-instead. That trades a tested pairing and a warm CDN for a larger download, so
-the app does not do it.
+for it. That trades a tested pairing and a warm CDN for a larger download, so
+the app leaves it alone.
 
 ## What the visitor downloads
 
@@ -132,7 +132,7 @@ Firefox and Safari get the zip. The button hides itself where the API is absent.
 
 The build also parses `core.py` and fails if it imports a module outside a
 known-portable set. Adding `import requests` to the engine breaks the browser
-build at deploy time rather than at a visitor's first click.
+build at deploy time, well before a visitor's first click.
 
 Enable Pages in repository settings with GitHub Actions as the source.
 
@@ -172,7 +172,7 @@ A 100-page report, 7.6 MB, with a full-page figure every tenth page:
 | Building the output zip, 88 KB | 17 ms |
 
 WebAssembly costs a factor of two against native, a mild penalty for a tool
-that spends its time inside MuPDF rather than in Python. The tab stops
+that spends its time inside MuPDF. The tab stops
 repainting for those 2.3 seconds. A 500-page document holds it for about 11
 seconds, which is where a Web Worker stops being optional.
 
@@ -262,8 +262,8 @@ the download here.
 PyMuPDF carries the AGPL v3, or an Artifex commercial licence. Section 13
 reaches users who interact with a modified version of the program over a
 network. The Pages build runs PyMuPDF in the visitor's own browser, so the
-visitor operates their own copy rather than talking to yours, which is a
-weaker case than server-side hosting. Publishing the corresponding source at
+visitor operates their own copy and never talks to yours, which is a weaker case
+than server-side hosting. Publishing the corresponding source at
 the same origin closes the question at no cost, so the workflow copies
 `LICENSE` into the site and the page footer links the source. See
 [NOTICE](../NOTICE).

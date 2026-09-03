@@ -44,8 +44,8 @@ __all__ = [
 CHARS_PER_TOKEN = 4.0
 
 # Resolution of the grid used to measure how much of a page raster images
-# cover. Marking cells rather than adding areas keeps overlapping images from
-# counting twice.
+# cover. Marking cells keeps overlapping images from counting twice; adding
+# their areas would double them.
 COVERAGE_GRID = 32
 
 MODES: dict[str, float] = {
@@ -127,7 +127,7 @@ class Settings:
     # A bordered callout box looks like a table to a line-reading detector, and
     # comes out as a grid of prose with empty columns. These reject that shape.
     # A rejected table still reaches the output as reading-order text, so the
-    # cost of turning one down is structure rather than content.
+    # cost of turning one down is structure; the words still arrive.
     # A real table fills its columns down the page. A box or a chart's axis
     # labels leave most columns blank on most rows, which is the sharpest signal
     # of the two shapes apart: real tables measured 0 to 33% thin columns in a
@@ -149,7 +149,7 @@ class Settings:
     # before its text is judged and before it is rendered.
     chart_margin: float = 18.0
     chart_max_words_per_line: float = 4.0  # above this the region holds prose
-    table_max_mean_cell: int = 120  # cells hold values, not paragraphs
+    table_max_mean_cell: int = 120  # a cell holds a value, never a paragraph
     table_max_cell: int = 600  # one cell this long is a paragraph
 
     # Scanned pages. Detection is cheap and always on; running OCR is not.
@@ -613,7 +613,7 @@ def _fenced(grid: str) -> str:
     """Pad a markdown grid with blank lines.
 
     Without one on each side, a grid touching prose or a page marker is read as
-    a paragraph of pipes rather than a table.
+    a paragraph of pipes.
     """
     return f"\n{grid.strip()}\n"
 
@@ -624,7 +624,7 @@ def _assemble_page(
     """Extract text with detected tables replaced by markdown grids.
 
     Text blocks falling inside a table's bounds are dropped and the grid takes
-    their place, so a table's contents appear once rather than twice.
+    their place, so a table's contents appear exactly once.
 
     Pages carrying fewer ruling lines than a table needs skip detection, which
     costs about 24 ms a page and rises with the amount of prose on it.
@@ -695,7 +695,7 @@ def _assemble_page(
         )
         if figure is not None:
             if _words_per_line(text) > settings.chart_max_words_per_line:
-                parts.append(text)  # a caption or a sentence, not a label
+                parts.append(text)  # a caption or a sentence, so keep it
                 continue
             if figure not in shown:
                 shown.add(figure)
@@ -759,8 +759,7 @@ def inspect_document(
 ) -> Advice:
     """Read a few pages and say how the rest should be handled.
 
-    Sampling rather than reading the whole file keeps this to a fraction of a
-    second. The signals separate cleanly: a slide deck measured 28 characters a
+    Sampling a few pages keeps this to a fraction of a second. The signals separate cleanly: a slide deck measured 28 characters a
     page with raster images over three quarters of it, a Commission report 3,556
     characters and no raster at all.
     """

@@ -4,9 +4,9 @@ Both formats are a zip of XML, so the standard library is enough and this runs
 wherever the engine runs, WebAssembly included. Nothing here imports PyMuPDF.
 
 What a PDF forces TSP to guess at, these formats state outright. A heading
-carries a style name rather than a font size. A table is an element rather than
-a grid of ruled lines. Running headers and footers live in separate parts of the
-file and never reach the body, so no frequency test has to find them.
+carries a style name. A table is an element. Running headers and footers live in
+separate parts of the file and never reach the body, so no frequency test has to
+find them.
 
 Copyright (C) 2026 Daga D.
 Licensed under the GNU General Public License v3.0 or later. See LICENSE.
@@ -58,8 +58,8 @@ def _docx_styles(archive) -> tuple[dict[str, int], set[str]]:
 
     A Slovenian author's headings are called Naslov1 and Naslov2, a German's
     berschrift1. The style definitions carry `w:name` of "heading 1" and an
-    outline level regardless, so the mapping comes from there rather than from
-    the identifier.
+    outline level regardless, so the mapping comes from there. The identifier is
+    the author's language and tells us nothing.
     """
     headings: dict[str, int] = {}
     contents: set[str] = set()
@@ -77,7 +77,7 @@ def _docx_styles(archive) -> tuple[dict[str, int], set[str]]:
 
         if _TOC_NAME.match(name) or name.lower() == "toc heading":
             # The entries go because their page numbers are gone, so the title
-            # over them goes too rather than standing on its own.
+            # over them goes too, since it would stand on its own.
             contents.add(style_id)
             continue
 
@@ -123,8 +123,8 @@ def _docx_body(node, headings, contents, blocks: list[Block], depth: int = 0) ->
                 # A contents entry, whose page numbers point at a pagination
                 # that is gone. The title above it is often unstyled, so it
                 # cannot be recognised by style: drop the short paragraph
-                # immediately before the run instead, since a title with
-                # nothing under it only puzzles a reader.
+                # immediately before the run, since a title with nothing under
+                # it only puzzles a reader.
                 if blocks and blocks[-1].kind == "body" and len(blocks[-1].text) <= 60:
                     blocks.pop()
                 continue
@@ -156,7 +156,7 @@ def _docx_body(node, headings, contents, blocks: list[Block], depth: int = 0) ->
                 continue
 
             # A layout frame. Its cells hold sections of the document, so walk
-            # into them rather than flattening a chapter into one row.
+            # into them. Flattening one turns a chapter into a single row.
             for row in rows_xml:
                 for cell in row.findall(f"{W}tc"):
                     _docx_body(cell, headings, contents, blocks, depth + 1)

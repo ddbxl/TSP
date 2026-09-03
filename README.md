@@ -4,7 +4,7 @@
 work from the desktop.
 
 Feed TSP a document and get back compact markdown, plus images of the pages that
-carry their meaning in charts rather than words. Your files stay on your machine.
+carry their meaning in charts. Your files stay on your machine.
 
 A 90-page report repeats its header on 90 pages, its footer on 90 pages, and
 sets its quotation marks in curly glyphs that cost two tokens each. You pay for
@@ -23,7 +23,7 @@ stay where they sit. No server sees them, and none needs to.
 
 The same `core.py` that runs on the desktop runs there, as WebAssembly through
 [Pyodide](https://pyodide.org). It loads as the page opens, on a worker thread,
-so the 28 MB arrives while you are choosing files rather than after. On a
+so the 28 MB arrives while you are choosing files. On a
 connection the browser reports as metered or very slow it waits, and adding a
 file starts it.
 
@@ -53,9 +53,8 @@ It opens the picker in Documents for that reason and says so if nothing gets
 saved.
 
 With two files or more, a row above the list sets the mode, Tables and Figures
-for all of them at once. It reads Mixed where the rows differ rather than
-claiming a setting the queue is not in, and a single row can still be changed
-afterwards.
+for all of them at once. It reads Mixed where the rows differ, so it never claims a setting the queue is
+not in, and a single row can still be changed afterwards.
 
 Finished files stay in the queue. Change a setting on one and it queues again;
 change nothing and the button offers Process again. Neither needs the file
@@ -110,12 +109,12 @@ Everything comes out as one `.md` file.
 
 A Word or OpenDocument file goes down a different path, and a better one. Both
 are a zip of XML, so the standard library reads them and everything TSP has to
-guess at in a PDF is stated outright: a heading carries a style name rather than
-a font size, a table is an element rather than a grid of ruled lines, and running
-headers live in a separate part of the file so they never enter the body at all.
+guess at in a PDF is stated outright: a heading carries a style name, a table is
+an element, and running headers live in a separate part of the file so they never
+enter the body at all.
 
 Two habits of Commission templates get handled. Heading levels are read from the
-style definitions rather than the style names, so a Slovenian author's `Naslov1`
+style definitions, so a Slovenian author's `Naslov1`
 and a German's `berschrift1` are found like any other. And a table whose cells
 hold whole sections is treated as a layout frame and walked into, since reading
 one as data turned a chapter into a single 59,000-character line.
@@ -147,7 +146,7 @@ characters and no raster at all. It also turns Tables on when the sample holds
 one worth keeping, and says when a document has no text layer and wants OCR.
 
 Figures it reports but does not switch on, since replacing a table with a picture
-is a choice to make rather than one to inherit.
+is a choice to make for yourself.
 
 Looking costs about a second on a 118-page report, against 24 to process it.
 
@@ -163,15 +162,14 @@ that page as a PNG alongside its text.
 | Slide decks | 50% | Presentations where the slide *is* the graphic |
 | Text only | 100% | Skip images and take the text |
 
-Two cases the threshold alone misses, both handled: a corner logo repeating on
-every page stays under a floor of 0.4% and triggers nothing, while a chart drawn
-in vector paths holds no raster image at all and gets caught by a path count
-instead.
+Two cases the threshold alone misses, both handled. A corner logo repeating on
+every page stays under a floor of 0.4% and triggers nothing. A chart drawn in
+vector paths holds no raster image at all, so a path count catches it.
 
 ## Scanned pages
 
 TSP spots a page holding an image and no text layer, counts them, and offers to
-read them rather than handing you an empty file.
+read them, so you never get an empty file with no explanation.
 
 **In the browser**, a scanned page brings up a language picker and a button.
 Tesseract arrives as WebAssembly the first time, about 7 MB for the engine and
@@ -185,9 +183,8 @@ language data need their own install there, and TSP bundles neither.
 
 Either way the recognised words go through the same cleaning as a text layer, so
 a word Tesseract split across two lines comes back whole. In the browser the
-words are folded into the document already written rather than prompting a fresh
-run, so reading three pages of a 120-page report costs the recognition and
-nothing else.
+words are folded into the document already written, so reading three pages of a
+120-page report costs the recognition and nothing else.
 
 No cloud service touches any of this, and none will. An online OCR API
 would mean posting your documents to somebody else's server, which is the one
@@ -205,7 +202,7 @@ tables come out as markdown grids:
 ```
 
 TSP drops the text blocks inside a table in favour of the grid, so cells appear
-once rather than twice. Measured on a six-column indicator table, a grid costs
+exactly once. Measured on a six-column indicator table, a grid costs
 231 tokens against 224 for the same content in reading order, so about 3% more.
 
 The cost is time, and it falls on pages that hold no table at all. Detection
@@ -241,8 +238,8 @@ On that 118-page report, 30 grids were detected and 7 kept. Pipe-table lines in
 the output fell from 387 to 90, and `MANIFEST.txt` records how many grids were
 turned down so you can check the judgement.
 
-A rejected grid costs structure, not content: those words still arrive as
-reading-order text.
+A rejected grid costs structure alone. Those words still arrive as reading-order
+text.
 
 ### What it will not find
 
@@ -323,13 +320,13 @@ report_TSP/
 ```
 
 Markdown, so a table renders as a table wherever you open the file, and an LLM
-reads the columns rather than a run of pipes. The markup stays minimal: a heading
+reads the columns as columns. The markup stays minimal: a heading
 for the filename, grids where tables were found, and nothing invented. Headings
 and emphasis inside a PDF resist recovery, and guessing at them would cost
 tokens for structure that might be wrong.
 
 `MANIFEST.txt` lists the headers and footers TSP dropped, so you can check its
-judgement rather than trust it.
+judgement.
 
 ## Where the savings come from
 
@@ -340,8 +337,8 @@ judgement rather than trust it.
 - Curly quotes, en dashes, ligatures and non-breaking spaces, mapped to ASCII.
   A curly apostrophe costs more than a straight one.
 - Runs of spaces and blank lines.
-- The explanation of image pages, written once at the top of the file instead of
-  above each image page.
+- The explanation of image pages, written once at the top of the file. It used
+  to sit above every image page.
 
 Measured on a synthetic 7-page report with a header and footer: 4,050 characters
 down to 3,540, about 1,012 estimated tokens down to 885. Documents with heavier
@@ -352,7 +349,7 @@ furniture give up more.
 - Token figures estimate at four characters per token, which is the rule of
   thumb for English prose. No single true count exists, since every model
   tokenises its own way. The figure runs low on tables and numbers, so treat it
-  as a before-and-after ratio rather than a total.
+  as a before-and-after ratio, never as a total.
 - Desktop OCR needs its own Tesseract install. The browser fetches a copy on
   demand.
 - Very large documents in the browser hold the PDF, its text and every rendered

@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         metavar="DIR",
-        help="write output folders here instead of beside each PDF",
+        help="write output folders here; the default puts them beside each file",
     )
     parser.add_argument(
         "-a",

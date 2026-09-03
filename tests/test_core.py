@@ -307,8 +307,8 @@ def test_caption_outside_the_table_survives(table_pdf: Path, tmp_path: Path):
 
 
 def test_markdown_grids_cost_about_the_same(table_pdf: Path, tmp_path: Path):
-    """Grids replace the reading-order text rather than adding to it, so the
-    token count should stay within a few per cent."""
+    """Grids replace the reading-order text, so the token count should stay
+    within a few per cent."""
     plain = process_pdf(table_pdf, Settings(output_dir=tmp_path / "a"))
     grids = process_pdf(
         table_pdf, Settings(extract_tables=True, output_dir=tmp_path / "b")
@@ -445,7 +445,7 @@ def test_no_python_hides_inside_a_javascript_string():
             )
             assert not looks_like_python, (
                 f"{script.name} embeds Python in a template literal; "
-                f"put it in a .py file instead"
+                f"put it in a .py file"
             )
 
 
@@ -478,7 +478,7 @@ def test_every_request_the_page_makes_has_a_handler_in_the_worker():
 
 def test_replies_are_keyed_by_request_id():
     """Matching replies to requests by name is what broke. The page must settle
-    on the echoed id instead."""
+    on the echoed id."""
     app = (WEB / "app.js").read_text(encoding="utf-8")
     worker = (WEB / "worker.js").read_text(encoding="utf-8")
 
@@ -674,7 +674,7 @@ def test_a_bordered_box_of_prose_is_not_a_table(box_pdf: Path, tmp_path: Path):
 
 
 def test_a_turned_down_grid_is_counted(box_pdf: Path, tmp_path: Path):
-    """The manifest should say a grid was judged and rejected, not stay silent."""
+    """The manifest should say a grid was judged and rejected."""
     result = process_pdf(box_pdf, Settings(extract_tables=True, output_dir=tmp_path))
     if result.tables_rejected:
         manifest = (result.text_path.parent / "MANIFEST.txt").read_text(
@@ -736,7 +736,7 @@ def test_an_ocr_failure_names_the_urls_it_used():
 
 def test_folding_ocr_in_does_not_reprocess_the_document():
     """Placing a few recognised pages once meant re-extracting every other page.
-    The bridge edits the finished markdown instead."""
+    The bridge edits the finished markdown."""
     bridge = (WEB / "bridge.py").read_text(encoding="utf-8")
     assert "def tsp_apply_ocr" in bridge
     assert "process_pdf" not in bridge.split("def tsp_apply_ocr")[1].split("\ndef ")[0]
@@ -757,7 +757,7 @@ def test_the_run_notes_stay_out_of_the_deliverables():
 
 def test_a_page_cleaner_is_public_for_reuse():
     """The bridge cleans recognised text the same way a run would, so the engine
-    has to expose that step rather than keep it private."""
+    has to expose that step publicly."""
     from tsp.core import prepare_page_text
 
     assert prepare_page_text("author-\nities said \u201cyes\u201d") == 'authorities said "yes"'
@@ -921,7 +921,7 @@ def test_every_workflow_limits_its_token():
 
 def test_no_job_gets_write_access_it_does_not_use():
     """Only the job that publishes needs to write, and a job-level block
-    replaces the workflow-level one rather than adding to it."""
+    replaces the workflow-level one, so it restates what it needs."""
     yaml = pytest.importorskip("yaml")
 
     spec = yaml.safe_load((WORKFLOWS / "pages.yml").read_text(encoding="utf-8"))
@@ -972,7 +972,7 @@ def test_a_word_file_becomes_markdown(tmp_path: Path):
 
 
 def test_a_word_table_needs_no_guesswork(tmp_path: Path):
-    """The file states its table, so the grid is exact rather than judged."""
+    """The file states its table, so the grid is exact and nothing is judged."""
     from tsp.core import process_document
 
     text = process_document(
@@ -1217,7 +1217,7 @@ def test_the_release_workflow_runs_the_tests_first():
 
 def test_the_version_agrees_everywhere():
     """The same check the release workflow makes, run on every commit so a
-    mismatch fails here rather than at publish time."""
+    mismatch fails here, well before publish time."""
     root = Path(__file__).resolve().parent.parent
     version = re.search(
         r'^version = "([^"]+)"', (root / "pyproject.toml").read_text(), re.M
