@@ -25,7 +25,9 @@ except ImportError:  # pragma: no cover
     import fitz as pymupdf
 
 __all__ = [
+    "Advice",
     "Settings",
+    "inspect_document",
     "SUPPORTED_SUFFIXES",
     "process_document",
     "prepare_page_text",
@@ -110,6 +112,9 @@ class Settings:
     # Remove the previous run's output before writing. Only files TSP itself
     # creates are touched, so pointing output at a shared folder stays safe.
     clean_target: bool = True
+    # "md" is the cheaper output and the one to paste. "html" costs about 6%
+    # more and exists for reading: one file with the page images inside it.
+    output_format: str = "md"
 
     # Tables. Detection costs about four times the text-extraction time, so it
     # stays off unless asked for. Markdown grids cost no more tokens than the
@@ -175,6 +180,7 @@ class PageStat:
 class Result:
     source: Path
     text_path: Path | None = None
+    html_path: Path | None = None
     pages: int = 0
     images_saved: int = 0
     chars_in: int = 0
@@ -736,6 +742,143 @@ SUPPORTED_SUFFIXES = (
 )
 
 
+@dataclass
+class Advice:
+    """What a look at a document suggests doing with it."""
+
+    threshold: float = 0.05
+    mode: str = next(iter(MODES))
+    tables: bool = False
+    figures: bool = False
+    ocr: bool = False
+    reasons: list[str] = field(default_factory=list)
+
+
+def inspect_document(
+    path: str | os.PathLike[str], sample: int = 10
+) -> Advice:
+    """Read a few pages and say how the rest should be handled.
+
+    Sampling rather than reading the whole file keeps this to a fraction of a
+    second. The signals separate cleanly: a slide deck measured 28 characters a
+    page with raster images over three quarters of it, a Commission report 3,556
+    characters and no raster at all.
+    """
+    source = Path(path)
+    suffix = source.suffix.lower()
+    advice = Advice()
+
+    if suffix in {".docx", ".odt"} | TEXT_SUFFIXES:
+        advice.reasons.append(
+            "no pages, so the picture threshold does not apply and tables come "
+            "through whatever the settings say"
+        )
+        return advice
+    if not source.is_file():
+        advice.reasons.append("file not found")
+        return advice
+
+    doc = None
+    settings = Settings()
+    try:
+        doc = pymupdf.open(source)
+        if doc.needs_pass or doc.page_count == 0:
+            advice.reasons.append("cannot be read")
+            return advice
+
+        count = doc.page_count
+        wanted = min(sample, count)
+        indexes = sorted({round(i * (count - 1) / max(1, wanted - 1)) for i in range(wanted)})
+
+        chars: list[int] = []
+        coverage: list[float] = []
+        landscape = tables = charts = 0
+
+        for index in indexes:
+            page = doc.load_page(index)
+            text = page.get_text("text").strip()
+            chars.append(len(text))
+            coverage.append(_raster_coverage(page, settings))
+            if page.rect.width > page.rect.height:
+                landscape += 1
+
+            drawings = page.get_cdrawings()
+            if _line_like(drawings) >= settings.table_min_lines:
+                try:
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        found = page.find_tables().tables
+                except Exception:
+                    found = []
+                for table in found:
+                    try:
+                        if _looks_like_a_table(table.extract(), settings):
+                            tables += 1
+                            break
+                    except Exception:
+                        pass
+            if drawings:
+                boxes = _drawing_boxes(page, drawings)
+                blocks = page.get_text("blocks", sort=True)
+                if _chart_regions(page, boxes, blocks, [], settings):
+                    charts += 1
+
+        middle = lambda values: sorted(values)[len(values) // 2]
+        median_chars = middle(chars)
+        median_cover = middle(coverage)
+
+        if median_chars <= settings.scan_max_chars and median_cover >= 0.8:
+            advice.ocr = True
+            advice.threshold = 0.05
+            advice.mode = next(iter(MODES))
+            advice.reasons.append(
+                f"{median_chars} characters a page behind a full-page image, so "
+                f"the text layer is missing and OCR would read it"
+            )
+        elif median_cover >= 0.3 or (landscape > len(indexes) / 2 and median_chars < 300):
+            advice.threshold = 0.5
+            advice.mode = "Slide decks (50%)"
+            advice.reasons.append(
+                f"{median_chars} characters a page and pictures over "
+                f"{median_cover:.0%} of it, which reads like slides"
+            )
+        elif median_cover >= 0.05:
+            advice.threshold = 0.2
+            advice.mode = "Mixed reports (20%)"
+            advice.reasons.append(
+                f"pictures over {median_cover:.0%} of a page beside "
+                f"{median_chars} characters of text"
+            )
+        else:
+            advice.threshold = 0.05
+            advice.mode = next(iter(MODES))
+            advice.reasons.append(
+                f"{median_chars} characters a page and almost no raster images"
+            )
+
+        if tables:
+            advice.tables = True
+            advice.reasons.append(
+                f"{tables} of {len(indexes)} sampled pages hold a table worth keeping"
+            )
+        if charts:
+            advice.figures = charts >= max(2, len(indexes) // 3)
+            advice.reasons.append(
+                f"{charts} of {len(indexes)} sampled pages hold a chart"
+                + ("" if advice.figures else ", too few to turn Figures on for you")
+            )
+        return advice
+
+    except Exception as exc:
+        advice.reasons.append(f"could not be looked at: {exc}")
+        return advice
+    finally:
+        if doc is not None:
+            try:
+                doc.close()
+            except Exception:
+                pass
+
+
 def process_document(
     path: str | os.PathLike[str],
     settings: Settings | None = None,
@@ -765,7 +908,9 @@ def _write_result(
         _clear_previous(target, source.stem)
 
     result.text_path = target / f"{source.stem}.md"
-    result.text_path.write_text(f"# {source.name}\n\n{body}\n", encoding="utf-8")
+    full = f"# {source.name}\n\n{body}\n"
+    result.text_path.write_text(full, encoding="utf-8")
+    _also_html(result, source, settings, full)
     result.chars_out = len(body)
     result.page_stats = [
         PageStat(number=1, chars=len(body), visual=False, blank=not body)
@@ -1068,6 +1213,7 @@ def process_pdf(
         result.tables_rejected = sum(rejected_counts)
 
         result.text_path.write_text(body, encoding="utf-8")
+        _also_html(result, source, settings, body)
         if settings.write_manifest:
             _write_manifest(target / "MANIFEST.txt", result, settings, boilerplate)
 
@@ -1120,13 +1266,30 @@ def _target_dir(source: Path, out_dir: Path) -> Path:
     return base
 
 
+def _also_html(result: Result, source: Path, settings: Settings, body: str) -> None:
+    """Write the reading copy beside the markdown when asked for.
+
+    The markdown stays either way: it is what the copy button, the OCR step and
+    anything pasting into a chat rely on.
+    """
+    if settings.output_format != "html" or result.text_path is None:
+        return
+    from .render import to_html
+
+    target = result.text_path.parent
+    result.html_path = target / f"{source.stem}.html"
+    result.html_path.write_text(
+        to_html(body, source.name, folder=target), encoding="utf-8"
+    )
+
+
 def _clear_previous(target: Path, stem: str) -> None:
     """Delete what an earlier run wrote, and nothing else.
 
     Reprocessing at a higher threshold renders fewer pages, so last run's
     images would otherwise linger and end up in the output.
     """
-    for name in (f"{stem}.md", f"{stem}.txt", "MANIFEST.txt"):
+    for name in (f"{stem}.md", f"{stem}.html", f"{stem}.txt", "MANIFEST.txt"):
         try:
             (target / name).unlink(missing_ok=True)
         except OSError:

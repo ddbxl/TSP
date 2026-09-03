@@ -129,6 +129,28 @@ scanned-page check do not apply to them.
 Old `.doc` is not read. It is a binary format needing LibreOffice or `antiword`,
 and it cannot be read in a browser at all. Save as `.docx`.
 
+## Choosing for you
+
+Leave the mode on **Automatic**, or pass `--auto`, and TSP reads ten pages spread
+through a document and decides from what it finds. It says why, so you can
+overrule it:
+
+```
+-> deck.pdf
+   chose slide decks (50%)
+     28 characters a page and pictures over 74% of it, which reads like slides
+```
+
+The signals separate cleanly. A slide deck measured 28 characters a page with
+raster images over three quarters of it; a Commission country report 3,556
+characters and no raster at all. It also turns Tables on when the sample holds
+one worth keeping, and says when a document has no text layer and wants OCR.
+
+Figures it reports but does not switch on, since replacing a table with a picture
+is a choice to make rather than one to inherit.
+
+Looking costs about a second on a 118-page report, against 24 to process it.
+
 ## Modes
 
 The threshold sets how much of a page raster images must cover before TSP saves
@@ -278,6 +300,17 @@ A chart cannot be told from a sparse table by any measure of its text: both run
 you would rather have read, and it only pays off if the images travel with the
 markdown. With **Tables** also on, a grid the table gate recovered wins over a
 picture.
+
+## Two outputs
+
+Markdown by default. Choose **Markdown and HTML**, or pass `--html`, and a
+self-contained HTML copy lands beside it: one file, tables rendered, and every
+page image carried inside it as a data URI, so it still works after you email it.
+
+The markdown always stays, because the copy button, the OCR step and anything
+pasting into a chat rely on it. HTML costs about 6% more tokens, measured at
+87,272 against 92,271 on two partnership agreements, so it is for reading rather
+than for pasting.
 
 ## What comes out
 

@@ -21,6 +21,7 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 from .core import (
     MODES,
+    inspect_document,
     SUPPORTED_SUFFIXES,
     Result,
     Settings,
@@ -29,6 +30,7 @@ from .core import (
 )
 
 APP_NAME = "TSP - Token Saving Protocol"
+AUTOMATIC = "Automatic"
 
 INK = "#0f172a"
 PAPER = "#f5f6f8"
@@ -193,6 +195,17 @@ class App:
         )
         ocr_box.pack(side="left", padx=(14, 0))
 
+        self.html_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            toolbar,
+            text="Also write HTML",
+            variable=self.html_var,
+            command=self._stale_all,
+            bg=PAPER, fg=MUTED, font=FONT_SMALL,
+            activebackground=PAPER, selectcolor=PAPER,
+            relief="flat", highlightthickness=0, cursor="hand2",
+        ).pack(side="left", padx=(14, 0))
+
         self.dpi_var = tk.StringVar(value="144 dpi")
         dpi_box = ttk.Combobox(
             toolbar,
@@ -219,7 +232,7 @@ class App:
         self.bulk_box = ttk.Combobox(
             bulk,
             textvariable=self.bulk_mode,
-            values=list(MODES),
+            values=[AUTOMATIC, *MODES],
             state="readonly",
             width=24,
         )
@@ -367,11 +380,11 @@ class App:
             side="left"
         )
 
-        mode = tk.StringVar(value=next(iter(MODES)))
+        mode = tk.StringVar(value=AUTOMATIC)
         ttk.Combobox(
             row,
             textvariable=mode,
-            values=list(MODES),
+            values=[AUTOMATIC, *MODES],
             state="readonly",
             width=24,
         ).pack(side="left", padx=6)
@@ -455,7 +468,7 @@ class App:
 
     def _apply_mode_to_all(self) -> None:
         chosen = self.bulk_mode.get()
-        if chosen not in MODES:
+        if chosen != AUTOMATIC and chosen not in MODES:
             return
         for item in self.items:
             item.mode.set(chosen)
@@ -500,20 +513,30 @@ class App:
         except (ValueError, IndexError):
             dpi = 144
 
-        jobs = [
-            (
-                item.path,
-                Settings(
-                    image_threshold=MODES[item.mode.get()],
-                    render_zoom=dpi / 72.0,
-                    render_visual_pages=MODES[item.mode.get()] <= 1.0,
-                    extract_tables=item.tables.get(),
-                    chart_regions=item.figures.get(),
-                    ocr=self.ocr_var.get() and self.ocr_ready,
-                ),
+        jobs = []
+        for item in self.items:
+            chosen = item.mode.get()
+            tables = item.tables.get()
+            if chosen == AUTOMATIC:
+                advice = inspect_document(item.path)
+                threshold = advice.threshold
+                tables = tables or advice.tables
+            else:
+                threshold = MODES[chosen]
+            jobs.append(
+                (
+                    item.path,
+                    Settings(
+                        image_threshold=threshold,
+                        render_zoom=dpi / 72.0,
+                        render_visual_pages=threshold <= 1.0,
+                        extract_tables=tables,
+                        chart_regions=item.figures.get(),
+                        ocr=self.ocr_var.get() and self.ocr_ready,
+                        output_format="html" if self.html_var.get() else "md",
+                    ),
+                )
             )
-            for item in self.items
-        ]
 
         for item in self.items:
             if item.state is not None:

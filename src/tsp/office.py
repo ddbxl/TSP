@@ -75,7 +75,9 @@ def _docx_styles(archive) -> tuple[dict[str, int], set[str]]:
         name_node = style.find(f"{W}name")
         name = (name_node.get(f"{W}val") or "") if name_node is not None else ""
 
-        if _TOC_NAME.match(name):
+        if _TOC_NAME.match(name) or name.lower() == "toc heading":
+            # The entries go because their page numbers are gone, so the title
+            # over them goes too rather than standing on its own.
             contents.add(style_id)
             continue
 
@@ -118,7 +120,14 @@ def _docx_body(node, headings, contents, blocks: list[Block], depth: int = 0) ->
         if child.tag == f"{W}p":
             style = _docx_style(child)
             if style in contents:
-                continue  # a table of contents entry, whose page numbers are gone
+                # A contents entry, whose page numbers point at a pagination
+                # that is gone. The title above it is often unstyled, so it
+                # cannot be recognised by style: drop the short paragraph
+                # immediately before the run instead, since a title with
+                # nothing under it only puzzles a reader.
+                if blocks and blocks[-1].kind == "body" and len(blocks[-1].text) <= 60:
+                    blocks.pop()
+                continue
             text = _docx_text(child)
             if not text:
                 continue
@@ -137,7 +146,8 @@ def _docx_body(node, headings, contents, blocks: list[Block], depth: int = 0) ->
                 [_docx_text(cell) for cell in row.findall(f"{W}tc")]
                 for row in rows_xml
             ]
-            if not any(any(cell for cell in row) for row in grid):
+            grid = [row for row in grid if any(cell.strip() for cell in row)]
+            if not grid:
                 continue
 
             longest = max((len(cell) for row in grid for cell in row), default=0)

@@ -11,9 +11,16 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
-from .core import SUPPORTED_SUFFIXES, Settings, process_document, tesseract_available
+from .core import (
+    SUPPORTED_SUFFIXES,
+    Settings,
+    inspect_document,
+    process_document,
+    tesseract_available,
+)
 
 BANNER = "TSP - Token Saving Protocol"
 
@@ -57,6 +64,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="DIR",
         help="write output folders here instead of beside each PDF",
+    )
+    parser.add_argument(
+        "-a",
+        "--auto",
+        action="store_true",
+        help="look at each file and choose the threshold, and whether to keep "
+        "tables, from what is in it",
+    )
+    parser.add_argument(
+        "--html",
+        action="store_true",
+        help="also write a self-contained HTML copy for reading, with the page "
+        "images inside it. Costs about 6%% more tokens than the markdown",
     )
     parser.add_argument(
         "--tables",
@@ -125,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         normalise_punctuation=not args.raw_punctuation,
         extract_tables=args.tables,
         chart_regions=args.figures,
+        output_format="html" if args.html else "md",
         ocr=args.ocr,
         ocr_language=args.ocr_lang,
         output_dir=args.out,
@@ -140,7 +161,22 @@ def main(argv: list[str] | None = None) -> int:
     for pdf in args.files:
         if not args.quiet:
             print(f"-> {pdf.name}", flush=True)
-        result = process_document(pdf, settings)
+
+        job = settings
+        if args.auto:
+            advice = inspect_document(pdf)
+            job = replace(
+                settings,
+                image_threshold=advice.threshold,
+                render_visual_pages=advice.threshold <= 1.0,
+                extract_tables=settings.extract_tables or advice.tables,
+                ocr=settings.ocr or (advice.ocr and tesseract_available()),
+            )
+            if not args.quiet:
+                print(f"   chose {advice.mode.lower()}")
+                for reason in advice.reasons:
+                    print(f"     {reason}")
+        result = process_document(pdf, job)
         tokens_in += result.tokens_in
         tokens_out += result.tokens_out
 

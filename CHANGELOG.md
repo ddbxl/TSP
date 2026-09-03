@@ -2,10 +2,35 @@
 
 Versions follow [Semantic Versioning](https://semver.org).
 
+## 0.5.0
+
+### Added
+
+- Automatic mode. TSP reads ten pages spread through a document and chooses the
+  picture threshold, and whether to keep tables, from what it finds, reporting
+  its reasons so the choice can be overruled. A slide deck measured 28
+  characters a page with pictures over 74% of it against a Commission report's
+  3,556 characters and no raster at all. It flags a missing text layer for OCR,
+  and reports charts without turning Figures on, since replacing a table with a
+  picture is a choice to make rather than one to inherit.
+- A self-contained HTML copy, written beside the markdown rather than instead of
+  it. Tables render, and page images are carried inside the file as data URIs so
+  it survives being emailed. `--html`, or the output control in the interfaces.
+  It costs about 6% more tokens than the markdown, so it is for reading.
+
+### Fixed
+
+- A page rendered whole is named in its page marker rather than on a line of its
+  own, so a slide deck's HTML arrived with no pictures in it.
+
 ## 0.4.1
 
 ### Fixed
 
+- A Word table of contents left its title behind, a heading with nothing under
+  it. The title is often an unstyled paragraph, so a short one immediately before
+  a run of contents entries goes with them.
+- Table rows holding nothing at all are dropped.
 - The browser built its list of readable suffixes into a regular expression,
   escaping dots but not backslashes. The list is hardcoded and holds neither, so
   nothing was exploitable, but the suffix is compared against a set now and no

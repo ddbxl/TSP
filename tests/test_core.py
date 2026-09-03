@@ -1239,3 +1239,225 @@ def test_the_suffix_check_builds_no_pattern():
     app = (WEB / "app.js").read_text(encoding="utf-8")
     assert "const READS = new Set(" in app
     assert "function readable(name)" in app
+
+
+def test_a_contents_title_goes_with_its_entries(tmp_path: Path):
+    """Dropping the entries and keeping the title leaves a heading with nothing
+    under it. The title is often unstyled, so it goes by position."""
+    import zipfile
+
+    from tsp.office import blocks_to_markdown, read_office
+
+    styles = """<?xml version="1.0"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:styleId="Kazalovsebine1"><w:name w:val="toc 1"/></w:style>
+</w:styles>"""
+    document = """<?xml version="1.0"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+ <w:body>
+  <w:p><w:r><w:t>Table of contents</w:t></w:r></w:p>
+  <w:p><w:pPr><w:pStyle w:val="Kazalovsebine1"/></w:pPr>
+    <w:r><w:t>1. Selected policy objectives 5</w:t></w:r></w:p>
+  <w:p><w:r><w:t>LIST OF ABBREVIATIONS</w:t></w:r></w:p>
+ </w:body>
+</w:document>"""
+    source = tmp_path / "contents.docx"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("word/styles.xml", styles)
+        archive.writestr("word/document.xml", document)
+
+    text = blocks_to_markdown(read_office(source))
+    assert "Table of contents" not in text
+    assert "1. Selected policy objectives 5" not in text
+    assert "LIST OF ABBREVIATIONS" in text, "the real content went with it"
+
+
+def test_a_long_paragraph_before_a_contents_list_survives(tmp_path: Path):
+    """Only a short paragraph is taken to be a title."""
+    import zipfile
+
+    from tsp.office import blocks_to_markdown, read_office
+
+    styles = """<?xml version="1.0"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:styleId="TOC1"><w:name w:val="toc 1"/></w:style>
+</w:styles>"""
+    keeper = "This paragraph is well past sixty characters long and must survive."
+    document = f"""<?xml version="1.0"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+ <w:body>
+  <w:p><w:r><w:t>{keeper}</w:t></w:r></w:p>
+  <w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:r><w:t>Section 1 4</w:t></w:r></w:p>
+ </w:body>
+</w:document>"""
+    source = tmp_path / "keep.docx"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("word/styles.xml", styles)
+        archive.writestr("word/document.xml", document)
+
+    assert keeper in blocks_to_markdown(read_office(source))
+
+
+def test_an_entirely_empty_table_row_is_dropped(tmp_path: Path):
+    import zipfile
+
+    from tsp.office import read_office
+
+    def row(cells):
+        return "<w:tr>" + "".join(
+            f"<w:tc><w:p><w:r><w:t>{cell}</w:t></w:r></w:p></w:tc>" for cell in cells
+        ) + "</w:tr>"
+
+    document = f"""<?xml version="1.0"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+ <w:body><w:tbl>{row(("Region", "Value"))}{row(("", ""))}{row(("Riga", "1.4"))}</w:tbl></w:body>
+</w:document>"""
+    source = tmp_path / "gappy.docx"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("word/document.xml", document)
+
+    table = [b for b in read_office(source) if b.kind == "table"][0]
+    assert table.rows == [["Region", "Value"], ["Riga", "1.4"]]
+
+
+# -- choosing the treatment automatically --------------------------------
+
+
+def test_a_slide_deck_is_recognised(tmp_path: Path):
+    """Landscape pages, little text, pictures over most of the page."""
+    from tsp.core import inspect_document
+
+    Image = pytest.importorskip("PIL.Image")
+    doc = pymupdf.open()
+    for number in range(8):
+        page = doc.new_page(width=720, height=540)
+        picture = tmp_path / f"slide{number}.png"
+        Image.new("RGB", (900, 640), (40, 90, 160)).save(picture)
+        page.insert_image(pymupdf.Rect(20, 80, 700, 520), filename=str(picture))
+        page.insert_text((30, 50), f"Slide {number + 1}", fontsize=20)
+    path = tmp_path / "deck.pdf"
+    doc.save(path)
+    doc.close()
+
+    advice = inspect_document(path)
+    assert advice.threshold == 0.5
+    assert "slides" in advice.reasons[0]
+
+
+def test_a_text_report_is_recognised(sample: Path):
+    from tsp.core import inspect_document
+
+    advice = inspect_document(sample)
+    assert advice.threshold == 0.05
+    assert advice.reasons
+
+
+def test_a_document_with_tables_asks_for_them(table_pdf: Path):
+    from tsp.core import inspect_document
+
+    advice = inspect_document(table_pdf)
+    assert advice.tables
+    assert any("table" in reason for reason in advice.reasons)
+
+
+def test_a_scan_is_spotted_and_ocr_suggested(scanned_pdf: Path):
+    from tsp.core import inspect_document
+
+    advice = inspect_document(scanned_pdf)
+    assert advice.ocr
+    assert any("text layer" in reason for reason in advice.reasons)
+
+
+def test_a_page_less_format_says_so(tmp_path: Path):
+    from tsp.core import inspect_document
+
+    advice = inspect_document(_docx(tmp_path / "report.docx"))
+    assert "no pages" in advice.reasons[0]
+
+
+def test_the_advice_always_explains_itself(sample: Path):
+    """A choice made for someone has to say why, or they cannot overrule it."""
+    from tsp.core import inspect_document
+
+    assert inspect_document(sample).reasons
+
+
+# -- the reading copy ----------------------------------------------------
+
+
+def test_html_is_written_beside_the_markdown(table_pdf: Path, tmp_path: Path):
+    """The markdown stays: the copy button, the OCR step and anything pasting
+    into a chat rely on it."""
+    from tsp.core import process_document
+
+    result = process_document(
+        table_pdf, Settings(output_format="html", output_dir=tmp_path)
+    )
+    assert result.text_path.suffix == ".md"
+    assert result.html_path is not None and result.html_path.is_file()
+
+
+def test_no_html_unless_asked(table_pdf: Path, tmp_path: Path):
+    from tsp.core import process_document
+
+    result = process_document(table_pdf, Settings(output_dir=tmp_path))
+    assert result.html_path is None
+    assert not list(tmp_path.rglob("*.html"))
+
+
+def test_a_table_becomes_a_real_table_in_html(table_pdf: Path, tmp_path: Path):
+    from tsp.core import process_document
+
+    result = process_document(
+        table_pdf,
+        Settings(output_format="html", extract_tables=True, output_dir=tmp_path),
+    )
+    page = result.html_path.read_text(encoding="utf-8")
+    assert "<table>" in page and "<th>" in page
+    assert "|Region|" not in page, "the pipes came through as text"
+
+
+def test_the_html_carries_its_pictures_inside_it(sample: Path, tmp_path: Path):
+    """A file with images in a folder beside it stops working once it moves."""
+    from tsp.core import process_document
+
+    result = process_document(
+        sample,
+        Settings(output_format="html", image_threshold=0.05, output_dir=tmp_path),
+    )
+    page = result.html_path.read_text(encoding="utf-8")
+    assert "data:image/png;base64," in page
+    assert 'class="missing"' not in page
+
+
+def test_html_escapes_what_it_should(tmp_path: Path):
+    from tsp.render import to_html
+
+    page = to_html("A paragraph about <script>alert(1)</script> and R&D.", "t.pdf")
+    assert "<script>" not in page
+    assert "&lt;script&gt;" in page and "R&amp;D" in page
+
+
+def test_a_page_rendered_whole_reaches_the_html(tmp_path: Path):
+    """A whole page turned into a picture is named in its page marker rather
+    than on a line of its own, so a slide deck arrived with no pictures."""
+    from tsp.core import process_document
+
+    Image = pytest.importorskip("PIL.Image")
+    doc = pymupdf.open()
+    for number in range(3):
+        page = doc.new_page(width=720, height=540)
+        picture = tmp_path / f"s{number}.png"
+        Image.new("RGB", (800, 600), (40, 90, 160)).save(picture)
+        page.insert_image(pymupdf.Rect(10, 10, 710, 530), filename=str(picture))
+    path = tmp_path / "deck.pdf"
+    doc.save(path)
+    doc.close()
+
+    result = process_document(
+        path,
+        Settings(output_format="html", image_threshold=0.05, output_dir=tmp_path / "o"),
+    )
+    page_html = result.html_path.read_text(encoding="utf-8")
+    assert page_html.count("data:image/png;base64,") == 3
+    assert 'class="missing"' not in page_html
