@@ -68,7 +68,7 @@ async function fetchText(url, what) {
   return response.text();
 }
 
-async function boot(coreUrl, officeUrl, bridgeUrl) {
+async function boot(coreUrl, officeUrl, renderUrl, bridgeUrl) {
   if (pyodide) return;
 
   say("status", { state: "loading", text: "Downloading Python runtime, about 10 MB" });
@@ -83,9 +83,10 @@ async function boot(coreUrl, officeUrl, bridgeUrl) {
   const route = await installPyMuPDF();
 
   say("status", { state: "loading", text: "Loading the TSP engine" });
-  const [engine, office, bridge] = await Promise.all([
+  const [engine, office, render, bridge] = await Promise.all([
     fetchText(coreUrl, "tsp_core.py"),
     fetchText(officeUrl, "tsp_office.py"),
+    fetchText(renderUrl, "tsp_render.py"),
     fetchText(bridgeUrl, "bridge.py"),
   ]);
 
@@ -93,6 +94,7 @@ async function boot(coreUrl, officeUrl, bridgeUrl) {
   pyodide.FS.writeFile("/lib/tsp/__init__.py", "");
   pyodide.FS.writeFile("/lib/tsp/core.py", engine);
   pyodide.FS.writeFile("/lib/tsp/office.py", office);
+  pyodide.FS.writeFile("/lib/tsp/render.py", render);
   pyodide.FS.mkdirTree("/work/in");
   pyodide.FS.mkdirTree("/work/out");
 
@@ -105,7 +107,7 @@ async function boot(coreUrl, officeUrl, bridgeUrl) {
   return `Ready. PyMuPDF ${version} on Pyodide ${pyodide.version} via ${route}`;
 }
 
-function process({ id, name, bytes, threshold, dpi, tables, figures, ocrText }) {
+function process({ id, name, bytes, threshold, dpi, tables, figures, html, ocrText }) {
   pyodide.FS.writeFile(`/work/in/${name}`, new Uint8Array(bytes));
 
   // Reaches Python as a callable, so progress arrives per page rather than
@@ -118,6 +120,7 @@ function process({ id, name, bytes, threshold, dpi, tables, figures, ocrText }) 
     dpi,
     tables,
     figures,
+    html,
     report,
     ocrText ? JSON.stringify(ocrText) : null
   );
@@ -150,10 +153,26 @@ self.onmessage = async (event) => {
   try {
     switch (type) {
       case "boot":
-        reply(id, { text: await boot(message.coreUrl, message.officeUrl, message.bridgeUrl) });
+        reply(id, { text: await boot(
+          message.coreUrl,
+          message.officeUrl,
+          message.renderUrl,
+          message.bridgeUrl
+        ) });
         break;
       case "process":
         process(message);
+        break;
+      case "inspect":
+        // The look happens before any processing, so put the bytes in place
+        // first rather than reading a file nobody has written.
+        pyodide.FS.writeFile(
+          `/work/in/${message.name}`,
+          new Uint8Array(message.bytes)
+        );
+        reply(id, {
+          advice: JSON.parse(pyodide.globals.get("tsp_inspect")(message.name)),
+        });
         break;
       case "deliver":
         deliver(id, message.name);

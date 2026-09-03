@@ -20,6 +20,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKER = resolve(HERE, "worker.js");
 const BRIDGE = resolve(HERE, "bridge.py");
 const OFFICE = resolve(HERE, "..", "src", "tsp", "office.py");
+const RENDER = resolve(HERE, "..", "src", "tsp", "render.py");
 const ENGINE = resolve(HERE, "..", "src", "tsp", "core.py");
 const PDF = process.argv[2];
 const WHEEL = process.env.TSP_WHEEL || "";
@@ -37,13 +38,15 @@ const sandbox = {
   },
   importScripts: () => { sandbox.self.loadPyodide = loadPyodide; },
   fetch: async (url) => {
-    const map = { core: ENGINE, office: OFFICE, bridge: BRIDGE };
+    const map = { core: ENGINE, office: OFFICE, render: RENDER, bridge: BRIDGE };
     const target = String(url);
     const key = target.includes("bridge")
       ? "bridge"
       : target.includes("office")
         ? "office"
-        : "core";
+        : target.includes("render")
+          ? "render"
+          : "core";
     return { ok: true, text: async () => readFileSync(map[key], "utf8"), json: async () => ({}) };
   },
   console,
@@ -84,12 +87,17 @@ function ask(type, payload = {}) {
   });
 }
 
-const boot = await ask("boot", { coreUrl: "x/tsp_core.py", officeUrl: "x/tsp_office.py", bridgeUrl: "x/bridge.py" });
+const boot = await ask("boot", { coreUrl: "x/tsp_core.py", officeUrl: "x/tsp_office.py", renderUrl: "x/tsp_render.py", bridgeUrl: "x/bridge.py" });
 console.log("boot ->", boot.text.replace(/via.*/, "via <route>"));
+
+const looked = await ask("inspect", {
+  name: "sample.pdf", bytes: new Uint8Array(readFileSync(PDF)),
+});
+console.log("inspect -> settled;", looked.advice.mode, "|", looked.advice.reasons[0]);
 
 const proc = await ask("process", {
   name: "sample.pdf", bytes: new Uint8Array(readFileSync(PDF)),
-  threshold: 5, dpi: 144, tables: false, figures: false,
+  threshold: 5, dpi: 144, tables: false, figures: false, html: true,
 });
 console.log("process ->", proc.report.message);
 

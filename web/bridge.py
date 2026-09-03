@@ -13,6 +13,7 @@ from pathlib import Path
 from tsp.core import (
     Settings,
     estimate_tokens_from_chars,
+    inspect_document,
     process_document,
     prepare_page_text,
     tesseract_available,
@@ -137,7 +138,20 @@ def tsp_apply_ocr(name, ocr_json):
     })
 
 
-def tsp_process(name, threshold_pct, dpi, tables, figures, report, ocr_json=None):
+def tsp_inspect(name):
+    """What a look at one document suggests. The page shows the reasons."""
+    advice = inspect_document(WORK / "in" / name)
+    return json.dumps({
+        "threshold": round(advice.threshold * 100),
+        "mode": advice.mode,
+        "tables": advice.tables,
+        "figures": advice.figures,
+        "ocr": advice.ocr,
+        "reasons": advice.reasons,
+    })
+
+
+def tsp_process(name, threshold_pct, dpi, tables, figures, html, report, ocr_json=None):
     """Process one PDF. 'report' is a JS callback taking (page, pages).
 
     'ocr_json' maps a page number to text recognised elsewhere.
@@ -156,6 +170,7 @@ def tsp_process(name, threshold_pct, dpi, tables, figures, report, ocr_json=None
         render_visual_pages=threshold_pct < 100,
         extract_tables=bool(tables),
         chart_regions=bool(figures),
+        output_format="html" if html else "md",
         output_dir=WORK / "out",
     )
     result = process_document(

@@ -11,6 +11,7 @@
 const WORKER_URL = new URL("./worker.js", import.meta.url);
 const CORE_URL = new URL("./tsp_core.py", import.meta.url);
 const OFFICE_URL = new URL("./tsp_office.py", import.meta.url);
+const RENDER_URL = new URL("./tsp_render.py", import.meta.url);
 const BRIDGE_URL = new URL("./bridge.py", import.meta.url);
 
 /* Output keeps the source name with a marker in front, so an optimised copy
@@ -79,6 +80,8 @@ function readable(name) {
 }
 
 const MODES = [
+  // 0 means "look at the file and decide", resolved before processing.
+  { label: "Automatic", value: 0 },
   { label: "Text documents (5%)", value: 5 },
   { label: "Mixed reports (20%)", value: 20 },
   { label: "Slide decks (50%)", value: 50 },
@@ -98,6 +101,7 @@ const ui = {
   bulkTables: el("bulk-tables"),
   bulkFigures: el("bulk-figures"),
   dpi: el("dpi"),
+  format: el("format"),
   run: el("run"),
   cancel: el("cancel"),
   reset: el("reset"),
@@ -231,6 +235,7 @@ function boot() {
   booting = ask("boot", {
     coreUrl: CORE_URL.href,
     officeUrl: OFFICE_URL.href,
+    renderUrl: RENDER_URL.href,
     bridgeUrl: BRIDGE_URL.href,
   }).then((answer) => {
     booted = true;
@@ -455,7 +460,8 @@ function addFiles(files) {
     known.add(key);
     queue.push({
       file,
-      mode: MODES[0].value,
+      mode: MODES[0].value, // Automatic
+      advice: null,
       tables: false,
       figures: false,
       state: "queued",
@@ -712,13 +718,31 @@ async function run() {
 
     try {
       const bytes = await entry.file.arrayBuffer();
+
+      let threshold = entry.mode;
+      let tables = entry.tables;
+      if (threshold === 0) {
+        ui.barLabel.textContent = `Looking at ${entry.file.name}`;
+        {
+          const looked = await ask("inspect", {
+            name: entry.file.name,
+            bytes,
+          });
+          entry.advice = looked.advice;
+          threshold = looked.advice.threshold;
+          tables = tables || looked.advice.tables;
+          log(`${entry.file.name}: ${looked.advice.reasons.join("; ")}`);
+        }
+      }
+
       const answer = await ask("process", {
         name: entry.file.name,
         bytes,
-        threshold: entry.mode,
+        threshold,
         dpi,
-        tables: entry.tables,
+        tables,
         figures: entry.figures,
+        html: ui.format.value === "html",
       });
       const report = answer.report;
 
