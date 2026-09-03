@@ -72,8 +72,7 @@ const READS = new Set([
 ]);
 
 /* Compares the suffix against a set. Building a pattern out of these strings
-   would mean escaping them, and escaping is a thing to get wrong rather than a
-   thing to do. */
+   would mean escaping them, and escaping is a thing to get wrong. */
 function readable(name) {
   const dot = name.lastIndexOf(".");
   return dot > 0 && READS.has(name.slice(dot).toLowerCase());
@@ -174,8 +173,8 @@ function spawn() {
 }
 
 /* Every request carries an id and the worker echoes it back, so a new request
-   needs no matching entry anywhere in here. Keying replies by name instead is
-   how a reply once went unhandled and left the interface waiting for ever. */
+   needs no matching entry anywhere in here. Keying replies by name is how one
+   once went unhandled and left the interface waiting for ever. */
 
 function ask(type, payload = {}) {
   const id = nextId++;
@@ -291,7 +290,7 @@ function guessCause(detail) {
   }
   if (/SyntaxError|unterminated|invalid syntax/i.test(text)) {
     return "The engine loaded but would not compile. That is a bug in TSP " +
-      "rather than anything you did.";
+      "on our side.";
   }
   if (/micropip|wheel|pymupdf|no matching distribution/i.test(text)) {
     return "PyMuPDF would not install. The pinned Pyodide version and the " +
@@ -859,7 +858,7 @@ async function copyText() {
   if (await toClipboard(plainText)) {
     flash(ui.copy, "Copied");
   } else {
-    log("Could not reach the clipboard. Use Download text instead.");
+    log("Could not reach the clipboard. Download text will work.");
   }
 }
 
@@ -1094,7 +1093,7 @@ ui.drop.addEventListener("drop", (event) => {
 buildBulkOptions();
 ui.bulkMode.addEventListener("change", () => {
   const chosen = ui.bulkMode.value;
-  if (!chosen) return; // Mixed is a report, not a request
+  if (!chosen) return; // Mixed reports the state; it asks for nothing
   applyToAll((entry) => {
     entry.mode = Number(chosen);
   });

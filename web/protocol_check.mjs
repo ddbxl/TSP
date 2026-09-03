@@ -5,7 +5,7 @@
  *     node web/protocol_check.mjs path/to/any.pdf
  *
  * A request whose reply nobody settles leaves the interface waiting for ever,
- * which no static check catches. This runs the real protocol instead.
+ * which no static check catches. This runs the real protocol.
  *
  * Copyright (C) 2026 Daga D.
  * Licensed under the GNU General Public License v3.0 or later.

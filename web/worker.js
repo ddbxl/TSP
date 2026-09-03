@@ -99,8 +99,8 @@ async function boot(coreUrl, officeUrl, renderUrl, bridgeUrl) {
   pyodide.FS.mkdirTree("/work/out");
 
   await pyodide.runPythonAsync('import sys; sys.path.insert(0, "/lib")');
-  // bridge.py is a real file rather than a string in this one, so nothing
-  // rewrites its escape sequences on the way in.
+  // bridge.py is a real file here, so nothing rewrites its escape sequences on
+  // the way in.
   await pyodide.runPythonAsync(bridge);
 
   const version = pyodide.runPython("import pymupdf; pymupdf.__version__");
@@ -110,8 +110,7 @@ async function boot(coreUrl, officeUrl, renderUrl, bridgeUrl) {
 function process({ id, name, bytes, threshold, dpi, tables, figures, html, ocrText }) {
   pyodide.FS.writeFile(`/work/in/${name}`, new Uint8Array(bytes));
 
-  // Reaches Python as a callable, so progress arrives per page rather than
-  // per file.
+  // Reaches Python as a callable, so progress arrives once per page.
   const report = (page, pages) => say("progress", { name, page, pages });
 
   const report_json = pyodide.globals.get("tsp_process")(
@@ -165,7 +164,7 @@ self.onmessage = async (event) => {
         break;
       case "inspect":
         // The look happens before any processing, so put the bytes in place
-        // first rather than reading a file nobody has written.
+        // first, since the file does not exist yet.
         pyodide.FS.writeFile(
           `/work/in/${message.name}`,
           new Uint8Array(message.bytes)
