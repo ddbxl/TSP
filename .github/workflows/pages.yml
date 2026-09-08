@@ -1,0 +1,117 @@
+name: Deploy browser build to Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      # The whole package, since the site is assembled from several of its
+      # modules. Watching core.py alone left the site stale when render.py
+      # changed, with no sign that anything was wrong.
+      - "src/tsp/**"
+      - "assets/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+# The build job only reads the repository. Writing to Pages is scoped to the
+# job that deploys. A job-level block replaces this one, so it restates the
+# read access it needs.
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          for f in index.html style.css app.js worker.js bridge.py \
+                   robots.txt sitemap.xml; do
+            cp "web/$f" _site/
+          done
+          cp assets/icon.svg assets/favicon.png _site/
+          cp assets/social-preview.png _site/
+          # One engine serves both targets: src/tsp/core.py.
+          cp src/tsp/core.py _site/tsp_core.py
+          cp src/tsp/office.py _site/tsp_office.py
+          cp src/tsp/render.py _site/tsp_render.py
+          cp LICENSE _site/LICENSE.txt
+
+      - name: Check every web file reached the site
+        run: |
+          # Catches a new file in web/ that nobody remembered to copy. Local
+          # tooling is named here so it is skipped on purpose. A glob would
+          # skip it by accident.
+          missing=0
+          for f in web/*; do
+            name=$(basename "$f")
+            case "$name" in
+              serve.py|protocol_check.mjs) continue ;;
+            esac
+            if [ ! -f "_site/$name" ]; then
+              echo "missing from _site: $name"
+              missing=1
+            fi
+          done
+          [ "$missing" = "0" ] || exit 1
+          echo "every site file copied"
+
+      - name: Check the Python that runs in the browser compiles
+        run: |
+          python3 -c "
+          import ast, pathlib, sys
+          for name in ('src/tsp/core.py', 'src/tsp/office.py',
+                       'src/tsp/render.py', 'web/bridge.py'):
+              try:
+                  ast.parse(pathlib.Path(name).read_text())
+              except SyntaxError as exc:
+                  sys.exit(f'{name} line {exc.lineno}: {exc.msg}')
+              print(name, 'compiles')
+          "
+
+      - name: Check the engine imports nothing unavailable in Pyodide
+        run: |
+          python3 - <<'PY'
+          import ast, sys
+          tree = ast.parse(open("src/tsp/core.py").read())
+          allowed = {
+              "os", "re", "io", "contextlib", "unicodedata", "collections",
+              "dataclasses", "pathlib", "typing", "pymupdf", "fitz",
+              "zipfile", "xml", "base64", "html", "__future__",
+          }
+          found = set()
+          for node in ast.walk(tree):
+              if isinstance(node, ast.Import):
+                  found.update(a.name.split(".")[0] for a in node.names)
+              elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                  found.add(node.module.split(".")[0])
+          extra = found - allowed
+          if extra:
+              sys.exit(f"core.py imports {sorted(extra)}; confirm Pyodide support first")
+          print("engine imports look portable:", sorted(found))
+          PY
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

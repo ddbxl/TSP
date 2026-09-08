@@ -1,0 +1,8 @@
+# Runtime
+pymupdf>=1.24.0
+
+# Optional: regenerating the icon and running the image tests
+pillow>=10.0.0
+
+# Development
+pytest>=8.0.0

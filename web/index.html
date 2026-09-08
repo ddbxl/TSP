@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TSP - Token Saving Protocol</title>
+<meta name="description" content="Convert PDF, Word, PowerPoint and OpenDocument files to compact Markdown for LLMs, in your browser. Strips running headers, keeps tables, reads scans with OCR. Nothing is uploaded.">
+<link rel="canonical" href="https://ddbxl.github.io/TSP/">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ddbxl.github.io/TSP/">
+<meta property="og:title" content="TSP, Token Saving Protocol">
+<meta property="og:description" content="Documents in, compact Markdown out, in your browser. Nothing is uploaded.">
+<meta property="og:image" content="https://ddbxl.github.io/TSP/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="icon" href="./favicon.png" sizes="64x64">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<header class="masthead">
+  <div class="mark" aria-hidden="true">
+    <span></span><span></span><span></span><span></span>
+  </div>
+  <div>
+    <h1>Token Saving Protocol</h1>
+    <p class="standfirst">
+      Documents in, compact markdown out. Pages that carry their meaning in
+      charts come back as images. Your files stay on this machine.
+    </p>
+  </div>
+</header>
+
+<div id="engine" class="engine engine--waiting" role="status" aria-live="polite">
+  <span class="engine__dot" aria-hidden="true"></span>
+  <span id="engine-text">Starting the engine</span>
+  <button id="boot" class="link" type="button" hidden>Start engine</button>
+</div>
+
+<main>
+  <section class="panel" aria-labelledby="queue-heading">
+    <h2 id="queue-heading" class="label">Documents</h2>
+
+    <div id="drop" class="drop" tabindex="0" role="button"
+         aria-label="Choose documents, or drop them here">
+      <p class="drop__line">Drop documents here, or <span class="drop__link">choose files</span></p>
+      <p class="drop__note">PDF, images, Word, PowerPoint, OpenDocument. Read locally, never uploaded</p>
+      <input id="picker" type="file" multiple hidden
+             accept=".pdf,.xps,.epub,.mobi,.fb2,.cbz,.svg,.png,.jpg,.jpeg,.bmp,.gif,.tiff,.tif,.docx,.odt,.pptx,.odp,.txt,.md">
+    </div>
+
+    <div id="bulk" class="bulk" hidden>
+      <span class="bulk__label">All documents</span>
+      <select id="bulk-mode" aria-label="Set the mode for every document"></select>
+      <label class="toggle">
+        <input type="checkbox" id="bulk-tables">Tables
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="bulk-figures">Figures
+      </label>
+    </div>
+
+    <ul id="queue" class="queue"></ul>
+
+    <div class="controls">
+      <label class="field">
+        <span>Image quality</span>
+        <select id="dpi">
+          <option value="96">96 dpi, smallest</option>
+          <option value="144" selected>144 dpi</option>
+          <option value="200">200 dpi</option>
+          <option value="300">300 dpi, sharpest</option>
+        </select>
+      </label>
+      <div class="actions">
+        <button id="run" class="button" type="button" disabled>Process files</button>
+        <button id="cancel" class="link link--stop" type="button" hidden>Cancel</button>
+        <button id="reset" class="link" type="button" hidden>Clear</button>
+      </div>
+    </div>
+
+    <div id="progress" class="progress" hidden aria-live="polite">
+      <div class="progress__track">
+        <div class="progress__fill" id="progress-fill" style="width:0%"></div>
+      </div>
+      <p class="progress__label" id="progress-label"></p>
+    </div>
+
+    <div id="notice" class="notice" hidden>
+      <p id="notice-text"></p>
+      <div id="ocr-offer" class="notice__actions" hidden>
+        <label class="field field--inline">
+          <span>Language</span>
+          <select id="ocr-lang">
+            <option value="eng" selected>English</option>
+            <option value="fra">French</option>
+            <option value="deu">German</option>
+            <option value="spa">Spanish</option>
+            <option value="ita">Italian</option>
+            <option value="nld">Dutch</option>
+            <option value="por">Portuguese</option>
+            <option value="pol">Polish</option>
+            <option value="ces">Czech</option>
+            <option value="slk">Slovak</option>
+            <option value="hun">Hungarian</option>
+            <option value="ron">Romanian</option>
+            <option value="bul">Bulgarian</option>
+            <option value="ell">Greek</option>
+            <option value="eng+fra">English and French</option>
+            <option value="eng+deu">English and German</option>
+          </select>
+        </label>
+        <button id="ocr-run" class="button button--quiet" type="button">
+          Read the scanned pages
+        </button>
+        <span id="ocr-note" class="hint hint--inline"></span>
+      </div>
+    </div>
+
+    <div id="results" class="results" hidden>
+      <h3 class="label label--sub">Everything together</h3>
+      <div class="results__row">
+        <button id="copy" class="button button--quiet" type="button">
+          Copy all text
+        </button>
+        <a id="download-text" class="button button--plain"
+           download="optimised_documents.md">
+          Download all text
+        </a>
+        <button id="download-html" class="button button--plain" type="button">
+          Download all as HTML
+        </button>
+      </div>
+      <div class="results__row results__row--quiet">
+        <a id="download" class="link" download="optimised_documents.zip">
+          Download everything as a zip
+        </a>
+        <button id="save-folder" class="link" type="button" hidden>
+          Save all to a folder
+        </button>
+      </div>
+      <p id="folder-hint" class="hint" hidden>
+        Nothing saved. Chrome refuses to write to some folders, Downloads
+        among them, and reports that the same way as a cancelled dialogue.
+        Documents and Desktop both work.
+      </p>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="meter-heading">
+    <h2 id="meter-heading" class="label">Token meter</h2>
+
+    <div class="meter">
+      <div class="meter__bar">
+        <div class="meter__kept" id="meter-kept" style="width:0%"></div>
+      </div>
+      <dl class="readout">
+        <div><dt>Extracted</dt><dd id="stat-in">0</dd></div>
+        <div><dt>Kept</dt><dd id="stat-out">0</dd></div>
+        <div><dt>Trimmed</dt><dd id="stat-cut">0%</dd></div>
+        <div><dt>Page images</dt><dd id="stat-img">0</dd></div>
+      </dl>
+      <p class="meter__note">
+        Token figures are estimates at four characters per token.
+      </p>
+    </div>
+
+
+    <p id="log" class="log" role="status" aria-live="polite"></p>
+
+    <div id="failure" class="failure" hidden>
+      <p class="failure__lead" id="failure-lead"></p>
+      <p class="failure__hint" id="failure-hint"></p>
+      <div class="failure__actions">
+        <a id="failure-report" class="button button--plain" target="_blank"
+           rel="noopener">Report this</a>
+        <button id="failure-copy" class="link" type="button">Copy details</button>
+      </div>
+      <details class="failure__more">
+        <summary>Technical details</summary>
+        <pre id="failure-trace"></pre>
+      </details>
+    </div>
+  </section>
+</main>
+
+<section class="about" aria-labelledby="about-heading">
+  <h2 id="about-heading" class="label">What this is</h2>
+  <p>
+    A long PDF costs more to send to an LLM than it needs to. Its running header
+    repeats on every page, its curly quotes and en dashes each cost an extra
+    token, and words broken across a line arrive in halves. On a long report that furniture came to 17% of the text.
+  </p>
+  <p>
+    TSP converts a document to Markdown and takes that weight out: running
+    headers and footers, standalone page numbers, hyphens across line breaks,
+    and punctuation that costs more than its plain equivalent. Tables come
+    through as Markdown grids so a model reads the columns as columns. Pages
+    whose meaning sits in a chart come back as images with the text beside them.
+    A page holding a scan with no text layer is read by OCR, here in the tab.
+  </p>
+  <p>
+    It reads PDF, Word (.docx), PowerPoint (.pptx), OpenDocument (.odt, .odp),
+    images (.png, .jpg, .tiff), EPUB and plain text. Everything comes out as
+    one Markdown file, with an HTML copy for reading.
+  </p>
+  <p>
+    Your documents are read where they sit. The engine is CPython compiled to
+    WebAssembly, so the work happens on your own machine and no server is asked
+    to look at anything. There is a desktop version for large batches and for
+    scripting.
+  </p>
+</section>
+
+<footer>
+  <p>
+    Free software under the
+    <a href="https://www.gnu.org/licenses/gpl-3.0.html">GNU GPL v3</a>.
+    The engine here is the same Python that runs on the desktop, compiled to
+    WebAssembly through <a href="https://pyodide.org">Pyodide</a> with
+    <a href="https://pymupdf.readthedocs.io">PyMuPDF</a>
+    (<a href="https://www.gnu.org/licenses/agpl-3.0.html">AGPL v3</a>).
+  </p>
+</footer>
+
+<script src="./app.js" type="module"></script>
+</body>
+</html>
