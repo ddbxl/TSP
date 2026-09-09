@@ -1735,6 +1735,22 @@ def test_nothing_names_a_real_document_or_body():
         "DG RE" "GIO", "Bratis" "lav", "NU" "TS", "EU" "-27", "EM" "FAF",
         "ER" "DF", "Cohesion F" "und", "country re" "port",
     ]
+    # An example filename can name a real document as surely as a place can, so
+    # the ones in the prose have to stay plain. A term list caught none of them.
+    plain = {
+        "report", "deck", "sample", "document", "documents", "file", "notes",
+        "chart", "box", "table", "indicators", "layout", "contents", "keep",
+        "gappy", "data", "monitor", "scan", "junk", "locked", "nope", "long",
+        "toptable", "big", "index", "optimised_report", "optimised_documents",
+        "any",
+        "tsp", "tsp_core", "tsp_office", "tsp_render", "bridge", "app",
+        "worker", "style", "serve", "protocol_check", "pages", "test",
+        "release", "pyproject", "requirements", "CHANGELOG", "README",
+        "NOTICE", "LICENSE", "BROWSER", "MANIFEST", "run", "icon", "favicon",
+        "social-preview", "robots", "sitemap", "core", "office", "render",
+        "cli", "gui", "make_icon", "make_social", "pyodide",
+        "loading-packages", "eng", "layout1", "localised", "screenshot",
+    }
     root = Path(__file__).resolve().parent.parent
     found = []
     for path in sorted(root.rglob("*")):
@@ -1746,4 +1762,15 @@ def test_nothing_names_a_real_document_or_body():
         for term in traceable:
             if term.lower() in text.lower():
                 found.append(f"{path.relative_to(root)}: {term}")
+
+        if path.suffix not in {".md", ".html"}:
+            continue  # code, where a dotted name is attribute access
+        for name in re.findall(
+            r"(?<![\w.])([A-Za-z0-9][A-Za-z0-9_-]{2,})"
+            r"\.(?:pdf|docx|odt|pptx|odp|zip)\b",
+            text,
+        ):
+            stem = name.split(".")[0]
+            if stem not in plain and stem.lower() not in plain:
+                found.append(f"{path.relative_to(root)}: example filename {name!r}")
     assert not found, f"traceable references: {found}"

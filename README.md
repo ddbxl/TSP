@@ -58,9 +58,8 @@ different thing: one file with the pictures inside it, to send to somebody.
 Embedding stops at 24 MB, since a browser will not open a page larger than that,
 and whatever is left out says where to find it.
 
-Downloads keep the source name with a marker in front, so
-`S3_Study_Final_Report.pdf` gives `optimised_S3_Study_Final_Report.md` and sorts
-beside its original.
+Downloads keep the source name with a marker in front, so `report.pdf` gives
+`optimised_report.md` and sorts beside its original.
 
 Chrome refuses to write to certain folders, Downloads among them, and reports
 that the same way as a cancelled dialogue, so the page cannot tell the two apart.

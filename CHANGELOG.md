@@ -56,3 +56,5 @@ First release.
   HTML in another, with the full per-document folders behind them.
 - `MANIFEST.txt` per document recording pages, images, the lines removed and the
   token estimate before and after.
+- The page carries a folded note in its footer saying what TSP does and which
+  formats it reads.

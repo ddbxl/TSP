@@ -514,15 +514,32 @@ select {
   word-break: break-word;
 }
 
-.about {
-  max-width: 46rem;
-  margin: 3rem auto 0;
-  padding-top: 1.6rem;
-  border-top: 1px solid var(--rule);
+/* Folded away: a first-time reader can open it, and everyone else gets the
+   licence line without scrolling past four paragraphs. */
+.about { margin: 0 0 1.4rem; }
+.about summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.about summary::-webkit-details-marker { display: none; }
+.about summary h2 { margin: 0; }
+.about summary::before {
+  content: "+";
+  font: 600 0.85rem/1 var(--mono);
+  color: var(--muted);
+}
+.about[open] summary::before { content: "\2212"; }
+.about summary:hover h2,
+.about summary:hover::before { color: var(--ink-soft); }
+.about p {
+  margin: 0.9rem 0 0;
+  max-width: 44rem;
   color: var(--ink-soft);
   font-size: 0.94rem;
 }
-.about p { margin: 0 0 0.9rem; }
 
 footer {
   margin-top: 2.5rem;
