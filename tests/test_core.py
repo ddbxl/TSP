@@ -424,9 +424,9 @@ WEB = Path(__file__).resolve().parent.parent / "web"
 
 
 def test_bridge_is_valid_python():
-    """web/bridge.py runs inside Pyodide. It used to live in a JavaScript
-    template literal, where an escape sequence was rewritten before Python saw
-    it. Parsing the real file is what catches that."""
+    """web/bridge.py runs inside Pyodide. A template literal rewrites escape
+    sequences before Python sees them, so the bridge is a real file and this
+    parses it."""
     import ast
 
     ast.parse((WEB / "bridge.py").read_text(encoding="utf-8"))
@@ -477,8 +477,8 @@ def test_every_request_the_page_makes_has_a_handler_in_the_worker():
 
 
 def test_replies_are_keyed_by_request_id():
-    """Matching replies to requests by name is what broke. The page must settle
-    on the echoed id."""
+    """Keyed by name, a reply nobody listens for leaves the interface waiting.
+    The page settles on the echoed id."""
     app = (WEB / "app.js").read_text(encoding="utf-8")
     worker = (WEB / "worker.js").read_text(encoding="utf-8")
 
@@ -668,7 +668,7 @@ def test_a_bordered_box_of_prose_is_not_a_table(box_pdf: Path, tmp_path: Path):
     result = process_pdf(box_pdf, Settings(extract_tables=True, output_dir=tmp_path))
     text = result.text_path.read_text(encoding="utf-8")
     assert result.tables_found == 0
-    assert "|" not in text, "a callout box came through as a grid"
+    assert "|" not in text, "a callout box became a grid"
     assert "The district performs above the regional average" in text, "the words went missing"
 
 
@@ -1438,8 +1438,8 @@ def test_html_escapes_what_it_should(tmp_path: Path):
 
 
 def test_a_page_rendered_whole_reaches_the_html(tmp_path: Path):
-    """A whole page turned into a picture is named in its page marker rather
-    than on a line of its own, so a slide deck arrived with no pictures."""
+    """A whole page turned into a picture is named in its page marker, never on
+    a line of its own, so the marker is where the picture comes from."""
     from tsp.core import process_document
 
     Image = pytest.importorskip("PIL.Image")
@@ -1503,8 +1503,8 @@ def test_a_presentation_becomes_markdown(tmp_path: Path):
 
 
 def test_a_slide_table_survives(tmp_path: Path):
-    """PyMuPDF opens a pptx but flattens two slides into one page and drops the
-    table, which is why there is a reader for it."""
+    """PyMuPDF opens a pptx, flattens two slides into one page and drops the
+    table, so slides have a reader of their own."""
     from tsp.core import process_document
 
     text = process_document(
@@ -1574,9 +1574,9 @@ def test_the_deploy_watches_everything_it_publishes():
 
 
 def test_embedding_stops_at_a_budget(tmp_path: Path):
-    """357 files came to 283 MB. Embedding every one builds a 378 MB string in
-    the runtime, copies it to JavaScript and copies it again into a Blob, which
-    killed the worker."""
+    """Embedding every picture of a large batch builds a string a third larger
+    again in the runtime, copies it to JavaScript and copies it once more into a
+    Blob, which exhausts the worker."""
     import os
 
     from tsp.render import EMBED_BUDGET, to_fragment, wrap
@@ -1652,7 +1652,7 @@ def test_the_bundle_gathers_the_markdown_and_the_html():
 
 
 def test_the_zip_and_the_folder_save_read_the_same_bundle():
-    """They used to walk the output separately, so they could disagree."""
+    """Walking the output separately would let them disagree."""
     bridge = (WEB / "bridge.py").read_text(encoding="utf-8")
     for name in ("tsp_zip", "tsp_files", "tsp_read"):
         body = bridge.split(f"def {name}(")[1].split("\ndef ")[0]
@@ -1660,8 +1660,8 @@ def test_the_zip_and_the_folder_save_read_the_same_bundle():
 
 
 def test_html_in_the_bundle_points_at_the_pictures_beside_it(tmp_path: Path):
-    """Embedding them would have added 378 MB to a 283 MB archive. Inside a zip
-    they travel together, so a relative reference works once extracted."""
+    """Embedding them grows an archive by a third again. Inside a zip they
+    travel together, so a relative reference works once extracted."""
     from tsp.render import to_fragment
 
     fragment = to_fragment(
@@ -1736,7 +1736,7 @@ def test_nothing_names_a_real_document_or_body():
         "ER" "DF", "Cohesion F" "und", "country re" "port",
     ]
     # An example filename can name a real document as surely as a place can, so
-    # the ones in the prose have to stay plain. A term list caught none of them.
+    # the ones in the prose have to stay plain. A term list catches none of them.
     plain = {
         "report", "deck", "sample", "document", "documents", "file", "notes",
         "chart", "box", "table", "indicators", "layout", "contents", "keep",
@@ -1774,3 +1774,34 @@ def test_nothing_names_a_real_document_or_body():
             if stem not in plain and stem.lower() not in plain:
                 found.append(f"{path.relative_to(root)}: example filename {name!r}")
     assert not found, f"traceable references: {found}"
+
+
+def test_nothing_narrates_an_earlier_version():
+    """A comment describing what the code used to do dates the file and tells a
+    reader about a state they cannot see. State the rule, not its history."""
+    # Only phrases that can be nothing else. "the grid used to measure coverage"
+    # and "a pagination that no longer exists" are ordinary English, so the
+    # bare forms of those would report noise.
+    markers = [
+        "it used to", "they used to", "which used to", "it previously",
+        "once went unhandled", "once broke", "is what broke",
+        "which is why there is", "would have added", "arrived with no",
+        "killed the worker", "flagged by codeql", "in an earlier version",
+    ]
+    root = Path(__file__).resolve().parent.parent
+    here = Path(__file__).resolve()
+    found = []
+    for path in sorted(root.rglob("*")):
+        if path.suffix not in {".md", ".py", ".js", ".mjs", ".yml", ".html"}:
+            continue
+        if ".git" in path.parts or "node_modules" in path.parts:
+            continue
+        if path.resolve() == here:
+            continue  # this file names the markers so it can look for them
+        text = path.read_text(errors="replace").lower()
+        found += [
+            f"{path.relative_to(root)}: {marker!r}"
+            for marker in markers
+            if marker in text
+        ]
+    assert not found, f"narration of an earlier state: {found}"

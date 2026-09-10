@@ -6,7 +6,7 @@ covered. Current as of August 2026, against PyMuPDF 1.28.0 and Pyodide 0.29.4.
 ## The short version
 
 It works, and the browser runs the same `src/tsp/core.py` as the desktop app.
-Pyodide provides CPython compiled to WebAssembly, PyMuPDF now publishes a
+Pyodide provides CPython compiled to WebAssembly, PyMuPDF publishes a
 WebAssembly wheel to PyPI, and `web/app.js` fetches the engine from the
 deployment, so nothing is reimplemented. GitHub Pages serves the three static
 files. PDFs stay in the tab.
@@ -17,7 +17,7 @@ front end is a separate 400-line interface over a shared engine.
 ## Three routes, and the one this repository takes
 
 **Pyodide plus the PyMuPDF WebAssembly wheel.** Chosen. PEP 783 standardised the
-PyEmscripten platform and PyPI now accepts wheels built for it, so
+PyEmscripten platform and PyPI accepts wheels built for it, so
 `micropip.install("pymupdf")` resolves a real 18.4 MB wheel. One engine serves
 both targets, and a bug fixed on the desktop reaches the browser on the next
 deploy.
@@ -204,8 +204,8 @@ disk to skip the download. The `protocol` job in `.github/workflows/test.yml`
 runs the same check on Node 24 for every push.
 
 Requests carry an id and the worker echoes it, so adding one needs no change to
-the page's message handler. Matching replies by name was how a reply once went
-unhandled.
+the page's message handler. Keyed by name, a reply nobody listens for leaves the
+interface waiting.
 
 ## Open on real browsers
 

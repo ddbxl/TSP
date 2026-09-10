@@ -173,8 +173,8 @@ function spawn() {
 }
 
 /* Every request carries an id and the worker echoes it back, so a new request
-   needs no matching entry anywhere in here. Keying replies by name is how one
-   once went unhandled and left the interface waiting for ever. */
+   needs no matching entry anywhere in here. Keyed by name, a reply nobody
+   listens for leaves the interface waiting for ever. */
 
 /* A worker that runs out of memory dies without firing onerror in every
    browser, and a promise waiting on it never settles. Reading a large document
@@ -290,7 +290,7 @@ function log(line) {
    trace collapsed, and offers to file it. */
 
 /* A rejected promise can carry anything. tesseract.js rejects with plain
-   strings, which is how a failure reached the report as "no detail captured". */
+   strings, so reading .message off one gives undefined. */
 function describe(error) {
   if (error === null || error === undefined) return "";
   if (typeof error === "string") return error;
