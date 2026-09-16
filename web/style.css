@@ -1,0 +1,533 @@
+/* TSP.
+ *
+ * Dark or light, in the register of the editors markdown tends to end up in, so
+ * the output and the place it goes look related. A sans for the controls and a
+ * serif for the title and the figures, both shipped with the site so it works
+ * offline. One accent, one radius, and the token meter as the single loud
+ * thing on the page.
+ *
+ * Copyright (C) 2026 Daga D.
+ * Licensed under the GNU General Public License v3.0 or later.
+ */
+
+@font-face {
+  font-family: "Inter";
+  src: url("./inter.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("./newsreader.woff2") format("woff2-variations");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  /* Dark by default, in the register of the editors markdown tends to end up
+     in, so the output and the place it goes look related. */
+  --bg: #1e1e1e;
+  --bg-lift: #262626;
+  --bg-sunken: #171717;
+  --border: #333333;
+  --border-firm: #3f3f3f;
+  --text: #dadada;
+  --text-muted: #9a9a9a;
+  --text-faint: #909090;
+  --accent: #8b6cef; /* the fill */
+  --accent-text: #a996f5; /* the same hue, light enough to read as small text */
+  --accent-firm: #6d4fd1;
+  --accent-wash: #2e2545;
+  --red: #e0827a;
+  --amber: #d9b45b;
+
+  --ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --type: "Newsreader", Georgia, serif;
+  --measure: 34rem;
+  --radius: 4px;
+}
+
+/* Light, in the same register. The head script sets data-theme from the
+   system preference or a stored choice, so neither set is duplicated and
+   nothing flashes on the way in. */
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-lift: #f6f6f7;
+  --bg-sunken: #ececed;
+  --border: #e0e0e2;
+  --border-firm: #cdcdd0;
+  --text: #222222;
+  --text-muted: #5c5c5f;
+  --text-faint: #6e6e72;
+  --accent: #7852ee;
+  --accent-text: #5b36cc;
+  --accent-firm: #6941e0;
+  --accent-wash: #ede8fd;
+  --red: #a8342a;
+  --amber: #7a5c1b;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0 auto;
+  padding: 0 1.5rem 6rem;
+  max-width: 48rem;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 15px/1.6 var(--ui);
+  font-variant-numeric: tabular-nums lining-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* -- masthead ---------------------------------------------------------- */
+
+.masthead {
+  display: flex;
+  gap: 1.15rem;
+  align-items: flex-start;
+  padding: 3.5rem 0 1.6rem;
+}
+
+/* The mark, at the cap height of the title beside it: four lines of a page
+   with the running head struck through. */
+.mark {
+  position: relative;
+  flex: 0 0 auto;
+  width: 42px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: clamp(2.1rem, 6vw, 3.1rem);
+  padding: 0.26em 0 0.32em;
+}
+.mark span { display: block; height: 4px; background: var(--text); }
+.mark span:nth-child(1) { width: 42px; }
+.mark span:nth-child(2) { width: 42px; }
+.mark span:nth-child(3) { width: 42px; }
+.mark span:nth-child(4) { width: 30px; }
+.mark::after {
+  content: "";
+  position: absolute;
+  left: -3px;
+  right: -3px;
+  top: 0.44em;
+  height: 3px;
+  background: var(--accent);
+  transform: rotate(-9deg);
+  transform-origin: center;
+}
+
+h1 {
+  margin: 0;
+  font-family: var(--type);
+  font-size: clamp(1.9rem, 5vw, 2.6rem);
+  font-weight: 400;
+  font-variation-settings: "opsz" 48;
+  letter-spacing: -0.012em;
+  line-height: 1.02;
+}
+
+.standfirst {
+  margin: 0.55rem 0 0;
+  max-width: var(--measure);
+  font-size: 1.02rem;
+  color: var(--text-muted);
+}
+
+/* -- the engine, while it comes down ---------------------------------- */
+
+.engine {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.75rem 0 0.9rem;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.engine__track {
+  flex: 1 1 auto;
+  height: 2px;
+  background: var(--border);
+}
+.engine__fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.engine__text {
+  flex: 0 0 auto;
+  font-size: 0.86rem;
+  color: var(--text-faint);
+}
+.engine--failed .engine__fill { background: var(--red); }
+.engine--failed .engine__text { color: var(--red); font-style: normal; }
+
+/* -- ruled bands, where a card kit would have gone --------------------- */
+
+.panel {
+  margin-top: 1.5rem;
+  padding: 1.3rem 1.4rem 1.5rem;
+  background: var(--bg-lift);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.label {
+  margin: 0 0 1.05rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+}
+.label--sub { margin: 0 0 0.75rem; font-weight: 400; }
+
+/* -- the drop zone ----------------------------------------------------- */
+
+.drop {
+  padding: 2.2rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  background: var(--bg-sunken);
+  border: 1px dashed var(--border-firm);
+  border-radius: var(--radius);
+  transition: background 0.12s, border-color 0.12s;
+}
+.drop:hover, .drop:focus-visible, .drop.is-over {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  outline: none;
+}
+.drop__line { margin: 0; font-size: 1.05rem; }
+.drop__link { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+.drop__note { margin: 0.3rem 0 0; font-size: 0.85rem; color: var(--text-faint); }
+
+/* -- the queue, as a list of galley lines ------------------------------ */
+
+.bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.4rem 0 0.2rem;
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--border-firm);
+}
+.bulk__label { color: var(--text-faint); font-size: 0.9rem; }
+
+.queue { list-style: none; margin: 0; padding: 0; }
+.queue li { padding: 0.7rem 0; border-bottom: 1px solid var(--border); }
+
+.row__main { display: flex; align-items: baseline; gap: 0.8rem; }
+
+.queue .name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue .size { flex: 0 0 auto; font-size: 0.85rem; color: var(--text-faint); }
+.queue .state {
+  flex: 0 0 auto;
+  min-width: 6rem;
+  text-align: right;
+  font-size: 0.85rem;
+  color: var(--text-faint);
+}
+.queue .state--done { color: var(--accent); font-style: normal; }
+.queue .state--failed { color: var(--red); font-style: normal; }
+
+.queue .remove {
+  flex: 0 0 auto;
+  padding: 0 0.15rem;
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--text-faint);
+  text-decoration: none;
+}
+.queue .remove:hover:enabled { color: var(--red); }
+.queue .remove:disabled { opacity: 0.4; cursor: default; }
+
+/* a proof's marginal marks sit indented under the line they belong to */
+.row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.1rem;
+  margin: 0.45rem 0 0.1rem 1.1rem;
+  padding-left: 0.8rem;
+  border-left: 2px solid var(--accent-wash);
+}
+.row__actions .link { padding: 0; font-size: 0.87rem; }
+
+/* -- controls ---------------------------------------------------------- */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.2rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+}
+.field { display: grid; gap: 0.25rem; font-size: 0.85rem; color: var(--text-faint); }
+.field--inline { gap: 0.2rem; }
+.actions { display: flex; align-items: center; gap: 1rem; }
+
+select {
+  font: inherit;
+  font-size: 0.93rem;
+  font-style: normal;
+  padding: 0.26rem 1.5rem 0.26rem 0.45rem;
+  color: var(--text);
+  background-color: var(--bg-sunken);
+  border: 1px solid var(--border-firm);
+  border-radius: var(--radius);
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-faint) 50%),
+    linear-gradient(135deg, var(--text-faint) 50%, transparent 50%);
+  background-position: right 0.6rem center, right 0.32rem center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+select:hover { border-color: var(--accent); }
+select:disabled { color: var(--text-faint); opacity: 0.6; }
+
+.toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.32rem;
+  flex: 0 0 auto;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.toggle input { accent-color: var(--accent); cursor: pointer; margin: 0; align-self: center; }
+.toggle input:disabled { cursor: default; }
+
+.button {
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 500;
+  padding: 0.44rem 1.15rem;
+  border: 1px solid var(--accent-firm);
+  border-radius: var(--radius);
+  background: var(--accent-firm);
+  color: #fff;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+.button:hover { background: #5c3fb8; border-color: #5c3fb8; }
+.button:disabled { background: var(--bg-sunken); color: var(--text-faint); border-color: var(--border); cursor: not-allowed; }
+.button--quiet { background: var(--accent-firm); border-color: var(--accent-firm); }
+.button--quiet:hover { background: var(--accent-firm); border-color: var(--accent-firm); }
+.button--plain { background: var(--bg-sunken); color: var(--text); border-color: var(--border-firm); }
+.button--plain:hover { background: var(--border); border-color: var(--text-faint); }
+
+.link {
+  font: inherit;
+  font-size: 0.88rem;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent-text);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.link--stop { color: var(--red); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* -- progress ---------------------------------------------------------- */
+
+.progress { margin-top: 1.2rem; }
+.progress__track { height: 2px; background: var(--border); }
+.progress__fill { height: 100%; background: var(--accent); transition: width 0.15s linear; }
+.progress__label { margin: 0.45rem 0 0; font-size: 0.85rem; color: var(--text-faint); }
+
+/* -- the meter: the one loud thing ------------------------------------- */
+
+.meter__bar {
+  height: 2.2rem;
+  display: flex;
+  border: 1px solid var(--border-firm);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-sunken) repeating-linear-gradient(
+    -45deg, transparent, transparent 5px, var(--border-firm) 5px, var(--border-firm) 7px
+  );
+}
+.meter__kept {
+  height: 100%;
+  background: var(--accent);
+  border-right: 1px solid var(--text);
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.readout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 1.1rem;
+  margin: 1.1rem 0 0;
+}
+.readout dt { font-size: 0.85rem; color: var(--text-faint); }
+.readout dd {
+  margin: 0.2rem 0 0;
+  font-family: var(--type);
+  font-size: 1.7rem;
+  font-weight: 400;
+  font-variation-settings: "opsz" 36;
+  letter-spacing: -0.015em;
+}
+.meter__note { margin: 1rem 0 0; max-width: var(--measure); font-size: 0.85rem; color: var(--text-faint); }
+
+/* -- results ----------------------------------------------------------- */
+
+.results { margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid var(--border); }
+.results__row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.8rem; }
+.results__row--quiet { margin-top: 0.9rem; gap: 1.3rem; }
+
+.hint { margin: 0.7rem 0 0; max-width: var(--measure); font-size: 0.85rem; color: var(--text-faint); }
+.hint--inline { margin: 0; align-self: center; max-width: 17rem; color: var(--amber); }
+
+/* -- notices ----------------------------------------------------------- */
+
+.notice {
+  margin: 1.2rem 0 0;
+  padding: 0.8rem 0 0.8rem 0.9rem;
+  border-left: 3px solid var(--amber);
+  background: var(--bg-lift);
+  font-size: 0.93rem;
+  color: var(--text-muted);
+}
+.notice p { margin: 0; }
+.notice a { color: var(--amber); }
+.notice__actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.9rem; margin-top: 0.85rem; }
+
+.log { margin: 1rem 0 0; font-size: 0.87rem; color: var(--text-faint); white-space: pre-wrap; }
+.log:empty { display: none; }
+
+/* -- failure ----------------------------------------------------------- */
+
+.failure {
+  margin-top: 1.3rem;
+  padding: 0.9rem 0 0.9rem 0.9rem;
+  border-left: 3px solid var(--red);
+  background: var(--bg-lift);
+}
+.failure__lead { margin: 0; font-weight: 600; color: var(--red); }
+.failure__hint { margin: 0.35rem 0 0; max-width: var(--measure); font-size: 0.93rem; color: var(--text-muted); }
+.failure__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 0.9rem; }
+.failure__more { margin-top: 0.85rem; font-size: 0.85rem; }
+.failure__more summary { cursor: pointer; color: var(--text-faint); }
+.failure__more pre {
+  margin: 0.55rem 0 0;
+  padding: 0.7rem 0.8rem;
+  max-height: 15rem;
+  overflow: auto;
+  background: var(--text);
+  color: #ded9d0;
+  font: 0.78rem/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* -- the folded note --------------------------------------------------- */
+
+.about { margin: 0 0 1.4rem; }
+.about summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 0.45rem; }
+.about summary::-webkit-details-marker { display: none; }
+.about summary h2 { margin: 0; }
+.about summary::before { content: "+"; color: var(--text-faint); }
+.about[open] summary::before { content: "\2212"; }
+.about summary:hover h2, .about summary:hover::before { color: var(--text); }
+.about p { margin: 0.85rem 0 0; max-width: var(--measure); font-size: 0.93rem; color: var(--text-muted); }
+
+footer {
+  margin-top: 3rem;
+  padding-top: 1.3rem;
+  border-top: 1px solid var(--border-firm);
+  font-size: 0.87rem;
+  color: var(--text-faint);
+}
+footer a { color: var(--accent-text); }
+
+.appearance { margin: 1.2rem 0 0; }
+
+/* Both ends are named, so the control says what each side means. A pill is the
+   one shape that escapes the 4px radius, since that is what the shape is. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  user-select: none;
+}
+/* The track sits first in the markup so the sibling selectors reach the
+   labels; flex puts it back in the middle. */
+.switch__track { order: 2; }
+.switch__side--light { order: 1; }
+.switch__side--dark { order: 3; }
+.switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+.switch__track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 25px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--border-firm);
+  transition: background 0.18s ease;
+}
+.switch__knob {
+  display: block;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transform: translateX(0);
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.switch input:checked + .switch__track { background: var(--accent); }
+.switch input:checked + .switch__track .switch__knob { transform: translateX(17px); }
+.switch input:focus-visible + .switch__track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.switch__side {
+  font-size: 0.87rem;
+  color: var(--text-faint);
+  transition: color 0.18s ease;
+}
+.switch input:not(:checked) ~ .switch__side--light,
+.switch input:checked ~ .switch__side--dark {
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meter__kept, .progress__fill, .drop, .switch__track, .switch__knob,
+  .switch__side {
+    transition: none;
+  }
+}
+
+@media (max-width: 34rem) {
+  body { font-size: 16px; }
+  .row__main { flex-wrap: wrap; }
+  .queue .state { text-align: left; min-width: 0; }
+  .controls { align-items: stretch; }
+}
